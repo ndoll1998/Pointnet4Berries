@@ -23,20 +23,36 @@ class Visualizer:
         # number of geometries
         self.n = 0
 
-    def add(self, fpath):
+    def add_by_file(self, fpath):
         # check if file exists
         assert os.path.isfile(fpath), "File does not exist"
         # read file
         xyzrgb = np.loadtxt(fpath)
-        points = normalize_pc(xyzrgb[:, :3]) + np.array([self.n * 1.5, 0, 0])
-        colors = xyzrgb[:, 3:] / 255
+        points = xyzrgb[:, :3]
+        colors = xyzrgb[:, 3:6] / 255
         # create pointcloud
         pc = open3d.geometry.PointCloud()
         pc.points = open3d.utility.Vector3dVector(points)
         pc.colors = open3d.utility.Vector3dVector(colors)
         # add pointcloud
-        self.vis.add_geometry(pc)
+        self.add_by_pointcloud(pc)
+        # return pointcoud
+        return pc
+
+    def add_by_pointcloud(self, pc):
+        # create normalized pointcoud
+        pc_add = open3d.geometry.PointCloud()
+        pc_add.points = open3d.utility.Vector3dVector(normalize_pc(np.asarray(pc.points)))
+        pc_add.colors = pc.colors
+        # move pointcloud on x axis
+        pc_add.points = open3d.utility.Vector3dVector(
+            np.asarray(pc_add.points) + np.array([self.n * 1.5, 0, 0])
+        )
+        # add pointcloud
+        self.vis.add_geometry(pc_add)
         self.n += 1
+        # return pointcloud
+        return pc
 
     def run(self):
         # run and destroy window afterwards
@@ -50,9 +66,10 @@ if __name__ == '__main__':
     # compare labeling ground trouth to original
     # vis.add("C:/Users/doll0/Documents/Grapes/Skeletons/CalardisBlanc/1E.xyzrgb")
     # vis.add("C:/Users/doll0/Documents/Grapes/GroundTruth/CalardisBlanc_1E.xyzrgb")
-
-    vis.add("C:/Users/doll0/Documents/Grapes/BBCH87_89/PinotNoir/PinotNoir_Grape_2.xyzrgb")
-    vis.add("C:/Users/doll0/Documents/Grapes/BBCH87_89/Dornfelder/Dornfelder_Grape_2E.xyzrgb")
-
+    # compare original to downsample
+    # pc = vis.add_by_file("C:/Users/doll0/Documents/Grapes/Skeletons/CalardisBlanc/1E.xyzrgb")
+    # pc_downsample = vis.add_by_pointcloud(open3d.open3d.geometry.voxel_down_sample(pc, voxel_size=1))
+    # view ground thruth matched
+    vis.add_by_file("C:/Users/doll0/Documents/Grapes/Skeletons_Full/CalardisBlanc_1.xyzrgb")
     # run
     vis.run()
