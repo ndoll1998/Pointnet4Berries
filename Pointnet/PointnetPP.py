@@ -53,6 +53,7 @@ class FeaturePropagation(nn.Module):
         y = i_points.transpose(1, 2)
         for conv, bn in zip(self.convs, self.batchnorms):
             y = F.relu(bn(conv(y)))
+
         # return
         return y
 
@@ -105,8 +106,8 @@ class PointnetPP_Segmentation(nn.Module):
             FeaturePropagation(dim=128 + feat_dim, shared=(128, 128))
         ])
         # create classification network
-        self.convs = [nn.Conv1d(in_, out_, 1) for in_, out_ in zip((128,) + shared[:-1], shared)]
-        self.batchnorms = [nn.BatchNorm1d(n) for n in shared]
+        self.convs = nn.ModuleList([nn.Conv1d(in_, out_, 1) for in_, out_ in zip((128,) + shared[:-1], shared)])
+        self.batchnorms = nn.ModuleList([nn.BatchNorm1d(n) for n in shared])
         # create classification layer
         self.classify = nn.Conv1d(shared[-1], k, 1)
         self.dropout = nn.Dropout(dropout_rate)

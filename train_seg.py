@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.optim as optimizer
 
 # import Pointnet
-from Pointnet.PointnetPP import PointnetPP_Encoder, PointnetPP_Classification
+from Pointnet.PointnetPP import PointnetPP_Encoder, PointnetPP_Segmentation
 # import utils
 from utils import normalize_pc
 
@@ -20,28 +20,42 @@ from tqdm import tqdm
 from time import time
 from random import sample, shuffle
 
+# numpy percision for printing
+np.set_printoptions(precision=3)
+
+# map classes to colors by index
+class_colors = [
+    (1, 0, 0),
+    (0, 1, 0),
+    (1, 1, 0),
+    (0, 0, 1),
+    (1, 0, 1),
+    (0, 1, 1),
+    (1, 1, 1)
+]
+
 
 # *** PARAMS ***
 
 # cuda device
 device = 'cuda:0'
 # model name
-model_name = "BBCH87_89_v2"
+model_name = "BBCH87_89_seg"
 # number of classes
-K = 4
+K = len(class_colors)
 # path to files
-fpath = "C:/Users/doll0/Documents/Grapes/BBCH87_89/"
+fpath = "C:/Users/doll0/Documents/Grapes/Skeletons_Full/"
 # number of points to use in training
-n_points = 20_000
+n_points = 12_000
 # number of samples per pointcloud
-n_samples = 10
+n_samples = 4
 # save path
 save_fpath = "C:/Users/doll0/Documents/results/"
 
 
 # training parameters
-epochs = 1000
-batch_size = 6
+epochs = 50
+batch_size = 2
 # update parameters after n batches
 update_interval = 1
 # save model after every n-th epoch
@@ -50,71 +64,73 @@ save_interval = 2
 
 # *** READ DATA ***
 
-pointclouds = {}
+pointclouds = []
 # open files
 for directory in tqdm(os.listdir(fpath)):
     # create entry
     full_dir = os.path.join(fpath, directory)
-    # pointclouds[directory] = np.random.uniform(-1, 1, size=(len(os.listdir(full_dir)), 2 * n_points, 6)) * 100
-    pointclouds[directory] = [np.loadtxt(os.path.join(full_dir, fname), dtype=np.float32) for fname in os.listdir(full_dir)]
+    pointclouds.append(np.loadtxt(full_dir, dtype=np.float32))
 
 # *** GENERATE TRAINING AND TESTING DATA ***
 
-x_train, y_train = [], []
-x_test, y_test = [], []
-for i, pcs in enumerate(pointclouds.values()):
-    # pick a random subset as train-set for current type
-    train_idx = sample(range(len(pcs)), len(pcs) - 5)
-    test_idx = set(range(len(pcs))).difference(train_idx)
-    # build train data
-    for j in train_idx:
-        # create multiple subclouds from one cloud
-        for _ in range(n_samples):
-            # check if pointcloud consists of enough points
-            if pcs[j].shape[0] < n_points:
-                continue
-            # get random subset of points
-            idx = sample(range(pcs[j].shape[0]), n_points)
-            x_train.append(pcs[j][idx, :])
-            y_train += [i]
-    # build test data
-    for j in test_idx:
-        # create multiple subclouds from one cloud
-        for _ in range(n_samples):
-            # check if pointcloud consists of enough points
-            if pcs[j].shape[0] < n_points:
-                continue
-            # get random subset of points
-            idx = sample(range(pcs[j].shape[0]), n_points)
-            x_test.append(pcs[j][idx, :])
-            y_test += [i]
+x_train, x_test = [], []
+
+# pick a random subset as train-set for current type
+train_idx = sample(range(len(pointclouds)), len(pointclouds) - 5)
+test_idx = set(range(len(pointclouds))).difference(train_idx)
+# build train data
+for j in train_idx:
+    # create multiple subclouds from one cloud
+    for _ in range(n_samples):
+        # check if pointcloud consists of enough points
+        if pointclouds[j].shape[0] < n_points:
+            continue
+        # get random subset of points
+        idx = sample(range(pointclouds[j].shape[0]), n_points)
+        x_train.append(pointclouds[j][idx, :])
+# build test data
+for j in test_idx:
+    # create multiple subclouds from one cloud
+    for _ in range(n_samples):
+        # check if pointcloud consists of enough points
+        if pointclouds[j].shape[0] < n_points:
+            continue
+        # get random subset of points
+        idx = sample(range(pointclouds[j].shape[0]), n_points)
+        x_test.append(pointclouds[j][idx, :])
 
 # convert lists to numpy
 x_train, x_test = np.array(x_train, dtype=np.float32), np.array(x_test, dtype=np.float32)
-y_train, y_test = np.array(y_train, dtype=np.long), np.array(y_test, dtype=np.long)
 # normalize pointclouds
 x_train[:, :, :3] = normalize_pc(x_train[:, :, :3])
 x_test[:, :, :3] = normalize_pc(x_test[:, :, :3])
 # normalize rgb values
-x_train[:, :, 3:] /= 255
-x_test[:, :, 3:] /= 255
-# convert to tensors and copy to device
+x_train[:, :, 3:6] /= 255
+x_test[:, :, 3:6] /= 255
+# separate classes from input
+x_train, y_train = x_train[:, :, :6], (x_train[:, :, 6:] != 0).astype(int)
+x_test, y_test = x_test[:, :, :6], (x_test[:, :, 6:] != 0).astype(int)
+# get class from bit-representation
+get_class = lambda bits: class_colors.index(tuple(bits))
+y_train = np.apply_along_axis(get_class, -1, y_train)
+y_test = np.apply_along_axis(get_class, -1, y_test)
+# create pytorch tensors from numpy arrays
 x_train, x_test = torch.from_numpy(x_train), torch.from_numpy(x_test)
 y_train, y_test = torch.from_numpy(y_train), torch.from_numpy(y_test)
-# transpose
+# transpose to match expected shape (batch, feats, points)
 x_train, x_test = x_train.transpose(1, 2), x_test.transpose(1, 2)
-
 
 # *** CREATE MODEL, OPTIMIZER AND LOSS ***
 
 # create encoder and classifier
 encoder = PointnetPP_Encoder(pos_dim=3, feat_dim=3).to(device)
-classifier = PointnetPP_Classification(k=K).to(device)
+classifier = PointnetPP_Segmentation(k=K, feat_dim=3).to(device)
 # create creterion
 creterion = nn.NLLLoss()
 # create optimizer
 optim = optimizer.Adam(list(encoder.parameters()) + list(classifier.parameters()))
 losses = []
+
 
 # *** TRAIN MODEL ***
 
@@ -134,12 +150,14 @@ for e in range(1, 1+epochs):
         # get batch
         x_batch = x_train[b * batch_size : (b+1) * batch_size].to(device).float()
         y_batch = y_train[b * batch_size : (b+1) * batch_size].to(device).long()
-        # pass through model
         pos, feats = x_batch[:, :3, :], x_batch[:, 3:, :]
+        # pass through model
         layer_outs = encoder.forward(pos, feats)
-        class_log_probs = classifier(layer_outs[-1][1])
-        # compute loss
-        loss += creterion(class_log_probs, y_batch)
+        class_log_probs = classifier(layer_outs)
+        # transpose to match (batch, points, feats) and flatten afterwards
+        class_log_probs = class_log_probs.transpose(1, 2).reshape(-1, K)
+        # compute loss of every point
+        loss += creterion(class_log_probs, y_batch.flatten())
         running_loss += loss.item()
         # optimization
         if (b > 0 and b % update_interval == 0) or (b == train_size//batch_size - 1):
@@ -174,6 +192,7 @@ for e in range(1, 1+epochs):
         # close figure to free memory
         plt.close()
 
+
 # *** TEST MODEL ***
 
 # confusion matrix
@@ -188,14 +207,16 @@ with torch.no_grad():
         # get batch
         x_batch = x_test[b * batch_size : (b+1) * batch_size].to(device).float()
         y_batch = y_test[b * batch_size : (b+1) * batch_size].numpy()
-        # pass through model
         pos, feats = x_batch[:, :3, :], x_batch[:, 3:, :]
+        # pass through model
         layer_outs = encoder.forward(pos, feats)
-        class_probs = classifier(layer_outs[-1][1])
+        class_probs = classifier(layer_outs)
+        # transpose to match (batch, points, feats) and flatten afterwards
+        class_probs = class_probs.transpose(1, 2).reshape(-1, K)
         # get predicted classes
         predicted = torch.max(class_probs, dim=-1)[1].cpu().numpy()
         # evaluate
-        for actual, pred in zip(y_batch, predicted):
+        for actual, pred in zip(y_batch.flatten(), predicted):
             confusion[actual, pred] += 1
         # remove
         del x_batch, y_batch

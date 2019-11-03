@@ -88,8 +88,10 @@ def interpolate(y_points, x_points, y_feats, x_feats):
     # get device and dimensions
     device, (B, N, dim), = x_points.device, x_points.shape
     batch_indices = torch.arange(B, dtype=torch.long).to(device)
-    # compute and sort distances
+    # compute distances and ignore distances of 0
     D = square_distance(x_points, y_points)
+    D += 1e-10  # D[D == 0] = float('inf')
+    # sort distances to interpolate from the closest
     D, idx = D.sort(dim=-1)
     # get interpolation points
     D, idx = D[:, :, :dim], idx[:, :, :dim]
