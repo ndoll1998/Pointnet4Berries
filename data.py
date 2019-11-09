@@ -2,22 +2,25 @@
 import numpy as np
 # import torch
 import torch
+# import NearestNeighbors-Algorithm from sklearn
+from sklearn.neighbors import NearestNeighbors
 # import utils
-from utils import normalize_pc, voxel_down_sample
+from utils import normalize_pc, voxel_down_sample, estimate_normals
 
 # import others
 from tqdm import tqdm
 from random import sample
 
-""" Generate Training and Testing Data """
 
-def build_data_cls(pointclouds_per_class, n_points, n_samples):
+# *** GENERATE TRAINING / TESTING DATA ***
+
+def build_data_cls(pointclouds_per_class, n_points, n_samples, samples_for_testing=5):
     
     x_train, y_train = [], []
     x_test, y_test = [], []
     for i, pcs in enumerate(pointclouds_per_class.values()):
         # pick a random subset as train-set for current type
-        train_idx = sample(range(len(pcs)), len(pcs) - 5)
+        train_idx = sample(range(len(pcs)), len(pcs) - samples_for_testing)
         test_idx = set(range(len(pcs))).difference(train_idx)
         # build train data
         for j in train_idx:
@@ -59,12 +62,12 @@ def build_data_cls(pointclouds_per_class, n_points, n_samples):
     # return data
     return x_train, y_train, x_test, y_test
 
-def build_data_seg(pointclouds_per_class, n_points, n_samples):
+def build_data_seg(pointclouds_per_class, n_points, n_samples, samples_for_testing=5):
 
     train, test = [], []
     for i, pcs in enumerate(pointclouds_per_class.values()):
         # pick a random subset as train-set for current type
-        train_idx = sample(range(len(pcs)), len(pcs) - 2)
+        train_idx = sample(range(len(pcs)), len(pcs) - samples_for_testing)
         test_idx = set(range(len(pcs))).difference(train_idx)
         # build train data
         for j in train_idx:
@@ -90,8 +93,8 @@ def build_data_seg(pointclouds_per_class, n_points, n_samples):
     # convert lists to numpy
     train, test = np.array(train, dtype=np.float32), np.array(test, dtype=np.float32)
     # separate input and class-labels
-    x_train, y_train = train[:, :, :6], train[:, :, 6:]
-    x_test, y_test = test[:, :, :6], test[:, :, 6:]
+    x_train, y_train = train[:, :, :-1], train[:, :, -1:]
+    x_test, y_test = test[:, :, :-1], test[:, :, -1:]
     # normalize pointclouds
     x_train[:, :, :3] = normalize_pc(x_train[:, :, :3])
     x_test[:, :, :3] = normalize_pc(x_test[:, :, :3])
@@ -107,26 +110,49 @@ def build_data_seg(pointclouds_per_class, n_points, n_samples):
     return x_train, y_train, x_test, y_test
 
 
-""" Perpare Data for Segmentation """
+# *** PREPARE DATA FOR SEGMENTATION ***
 
 # map color to class by index
 color2class = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (200, 140, 0), (0, 200, 200), (255, 0, 255), (255, 255, 255)]
 
-def create_segmentation_pointcloud(original_file, segmentation_file, save_file):
+def get_color_from_nearest(query_points, points, colors):
+    # build tree
+    tree = NearestNeighbors(n_neighbors=1, algorithm='ball_tree').fit(points)
+    # get nearest neighbor indices
+    idx = tree.kneighbors(query_points, return_distance=False)
+    # return colors from indices
+    return colors[idx.flatten()]
+
+def create_segmentation_pointcloud(original_file, segmentation_file, save_file, use_nearest_color=False, approximate_normals=False):
     # read files
     original = np.loadtxt(original_file).astype(np.float32)
     segmentation = np.loadtxt(segmentation_file).astype(np.float32)
+    # create feature-stack
+    stack = (original,)
+
+    # approximate normals
+    if approximate_normals:
+        stack +=(estimate_normals(original), )
+
     # get segmentations
-    seg_sematic = segmentation[:, 3:]
+    if use_nearest_color:
+        # sort out points with colors not matching to any class
+        idx = [i for i, x in enumerate(segmentation) if tuple(x[3:6]) in color2class]
+        seg_sematic = get_color_from_nearest(original[:, :3], segmentation[idx, :3], segmentation[idx, 3:6])
+    else:
+        # get color by row
+        seg_sematic = segmentation[:, 3:]
     # map segmentation to class
     get_class = lambda c: color2class.index(tuple(c))
     classes = np.apply_along_axis(get_class, 1, seg_sematic)
+    stack += (classes.reshape(-1, 1), )
+
     # stack segmentation to array and sace
-    combined = np.hstack((original, classes.reshape(-1, 1)))
+    combined = np.hstack(stack)
     np.savetxt(save_file, combined)
 
 
-""" Data Augmentation """
+# *** DATA AUGMENTATION ***
 
 def mirror_pointcloud(original_file, save_file):
     # read files and mirror x-axis
@@ -136,68 +162,84 @@ def mirror_pointcloud(original_file, save_file):
     np.savetxt(save_file, mirrored)
 
 
-
 if __name__ == '__main__':
 
     # set flags
-    COMBINE_DATA = False
+    COMBINE_DATA = True
     AUGMENT_DATA = True
-
-    """ combine semantic labels and actual colors in one class """
 
     # map files
     grapes_files = [
         # Calardis Blanc
-        ("C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89/CalardisBlanc/CalardisBlanc_Grape_1E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/CalardisBlanc_Grape_1E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89_seg/CalardisBlanc/CalardisBlanc_Grape_1E.xyzrgbc"),
-        ("C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89/CalardisBlanc/CalardisBlanc_Grape_2E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/CalardisBlanc_Grape_2E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89_seg/CalardisBlanc/CalardisBlanc_Grape_2E.xyzrgbc"),
-        ("C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89/CalardisBlanc/CalardisBlanc_Grape_3E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/CalardisBlanc_Grape_3E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89_seg/CalardisBlanc/CalardisBlanc_Grape_3E.xyzrgbc"),
-        ("C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89/CalardisBlanc/CalardisBlanc_Grape_4E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/CalardisBlanc_Grape_4E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89_seg/CalardisBlanc/CalardisBlanc_Grape_4E.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/BBCH87_89/CalardisBlanc/CalardisBlanc_Grape_1E.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/CalardisBlanc_Grape_1E.xyzrgb", "C:/Users/doll0/Documents/Grapes/BBCH87_89_seg/CalardisBlanc/CalardisBlanc_Grape_1E.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/BBCH87_89/CalardisBlanc/CalardisBlanc_Grape_2E.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/CalardisBlanc_Grape_2E.xyzrgb", "C:/Users/doll0/Documents/Grapes/BBCH87_89_seg/CalardisBlanc/CalardisBlanc_Grape_2E.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/BBCH87_89/CalardisBlanc/CalardisBlanc_Grape_3E.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/CalardisBlanc_Grape_3E.xyzrgb", "C:/Users/doll0/Documents/Grapes/BBCH87_89_seg/CalardisBlanc/CalardisBlanc_Grape_3E.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/BBCH87_89/CalardisBlanc/CalardisBlanc_Grape_4E.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/CalardisBlanc_Grape_4E.xyzrgb", "C:/Users/doll0/Documents/Grapes/BBCH87_89_seg/CalardisBlanc/CalardisBlanc_Grape_4E.xyzrgbc"),
         # Dornfelder
-        ("C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89/Dornfelder/Dornfelder_Grape_1E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/Dornfelder_Grape_1E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89_seg/Dornfelder/Dornfelder_Grape_1E.xyzrgbc"),
-        ("C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89/Dornfelder/Dornfelder_Grape_2E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/Dornfelder_Grape_2E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89_seg/Dornfelder/Dornfelder_Grape_2E.xyzrgbc"),
-        ("C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89/Dornfelder/Dornfelder_Grape_3E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/Dornfelder_Grape_3E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89_seg/Dornfelder/Dornfelder_Grape_3E.xyzrgbc"),
-        ("C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89/Dornfelder/Dornfelder_Grape_4E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/Dornfelder_Grape_4E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89_seg/Dornfelder/Dornfelder_Grape_4E.xyzrgbc"),
-        ("C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89/Dornfelder/Dornfelder_Grape_5E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/Dornfelder_Grape_5E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89_seg/Dornfelder/Dornfelder_Grape_5E.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/BBCH87_89/Dornfelder/Dornfelder_Grape_1E.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/Dornfelder_Grape_1E.xyzrgb", "C:/Users/doll0/Documents/Grapes/BBCH87_89_seg/Dornfelder/Dornfelder_Grape_1E.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/BBCH87_89/Dornfelder/Dornfelder_Grape_2E.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/Dornfelder_Grape_2E.xyzrgb", "C:/Users/doll0/Documents/Grapes/BBCH87_89_seg/Dornfelder/Dornfelder_Grape_2E.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/BBCH87_89/Dornfelder/Dornfelder_Grape_3E.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/Dornfelder_Grape_3E.xyzrgb", "C:/Users/doll0/Documents/Grapes/BBCH87_89_seg/Dornfelder/Dornfelder_Grape_3E.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/BBCH87_89/Dornfelder/Dornfelder_Grape_4E.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/Dornfelder_Grape_4E.xyzrgb", "C:/Users/doll0/Documents/Grapes/BBCH87_89_seg/Dornfelder/Dornfelder_Grape_4E.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/BBCH87_89/Dornfelder/Dornfelder_Grape_5E.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/Dornfelder_Grape_5E.xyzrgb", "C:/Users/doll0/Documents/Grapes/BBCH87_89_seg/Dornfelder/Dornfelder_Grape_5E.xyzrgbc"),
         # Pinot Noir
-        ("C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89/PinotNoir/PinotNoir_Grape_1.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/PinotNoir_Grape_1.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89_seg/PinotNoir/PinotNoit_Grape_1.xyzrgbc"),
-        ("C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89/PinotNoir/PinotNoir_Grape_2.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/PinotNoir_Grape_2.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89_seg/PinotNoir/PinotNoit_Grape_2.xyzrgbc"),
-        ("C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89/PinotNoir/PinotNoir_Grape_3.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/PinotNoir_Grape_3.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89_seg/PinotNoir/PinotNoit_Grape_3.xyzrgbc"),
-        ("C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89/PinotNoir/PinotNoir_Grape_4.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/PinotNoir_Grape_4.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89_seg/PinotNoir/PinotNoit_Grape_4.xyzrgbc"),
-        ("C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89/PinotNoir/PinotNoir_Grape_5.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/PinotNoir_Grape_5.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89_seg/PinotNoir/PinotNoit_Grape_5.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/BBCH87_89/PinotNoir/PinotNoir_Grape_1.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/PinotNoir_Grape_1.xyzrgb", "C:/Users/doll0/Documents/Grapes/BBCH87_89_seg/PinotNoir/PinotNoit_Grape_1.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/BBCH87_89/PinotNoir/PinotNoir_Grape_2.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/PinotNoir_Grape_2.xyzrgb", "C:/Users/doll0/Documents/Grapes/BBCH87_89_seg/PinotNoir/PinotNoit_Grape_2.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/BBCH87_89/PinotNoir/PinotNoir_Grape_3.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/PinotNoir_Grape_3.xyzrgb", "C:/Users/doll0/Documents/Grapes/BBCH87_89_seg/PinotNoir/PinotNoit_Grape_3.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/BBCH87_89/PinotNoir/PinotNoir_Grape_4.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/PinotNoir_Grape_4.xyzrgb", "C:/Users/doll0/Documents/Grapes/BBCH87_89_seg/PinotNoir/PinotNoit_Grape_4.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/BBCH87_89/PinotNoir/PinotNoir_Grape_5.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/PinotNoir_Grape_5.xyzrgb", "C:/Users/doll0/Documents/Grapes/BBCH87_89_seg/PinotNoir/PinotNoit_Grape_5.xyzrgbc"),
         # Riesling
-        ("C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89/Riesling/Riesling_1.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/Riesling_1.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89_seg/Riesling/Riesling_Grape_1.xyzrgbc"),
-        ("C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89/Riesling/Riesling_2.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/Riesling_2.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89_seg/Riesling/Riesling_Grape_2.xyzrgbc"),
-        ("C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89/Riesling/Riesling_3.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/Riesling_3.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89_seg/Riesling/Riesling_Grape_3.xyzrgbc"),
-        ("C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89/Riesling/Riesling_4.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/Riesling_4.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89_seg/Riesling/Riesling_Grape_4.xyzrgbc"),
-        ("C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89/Riesling/Riesling_5.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/Riesling_5.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89_seg/Riesling/Riesling_Grape_5.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/BBCH87_89/Riesling/Riesling_1.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/Riesling_1.xyzrgb", "C:/Users/doll0/Documents/Grapes/BBCH87_89_seg/Riesling/Riesling_Grape_1.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/BBCH87_89/Riesling/Riesling_2.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/Riesling_2.xyzrgb", "C:/Users/doll0/Documents/Grapes/BBCH87_89_seg/Riesling/Riesling_Grape_2.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/BBCH87_89/Riesling/Riesling_3.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/Riesling_3.xyzrgb", "C:/Users/doll0/Documents/Grapes/BBCH87_89_seg/Riesling/Riesling_Grape_3.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/BBCH87_89/Riesling/Riesling_4.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/Riesling_4.xyzrgb", "C:/Users/doll0/Documents/Grapes/BBCH87_89_seg/Riesling/Riesling_Grape_4.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/BBCH87_89/Riesling/Riesling_5.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/Riesling_5.xyzrgb", "C:/Users/doll0/Documents/Grapes/BBCH87_89_seg/Riesling/Riesling_Grape_5.xyzrgbc"),
     ]
 
     stem_files = [
         # Calardis Blanc
-        ("C:/Users/doll0.SGN/Documents/Grapes/Skeletons/CalardisBlanc/1E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/CalardisBlanc_1E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/Skeletons_seg/CalardisBlanc/1E.xyzrgbc"),
-        ("C:/Users/doll0.SGN/Documents/Grapes/Skeletons/CalardisBlanc/2E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/CalardisBlanc_2E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/Skeletons_seg/CalardisBlanc/2E.xyzrgbc"),
-        ("C:/Users/doll0.SGN/Documents/Grapes/Skeletons/CalardisBlanc/3E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/CalardisBlanc_3E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/Skeletons_seg/CalardisBlanc/3E.xyzrgbc"),
-        ("C:/Users/doll0.SGN/Documents/Grapes/Skeletons/CalardisBlanc/4E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/CalardisBlanc_4E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/Skeletons_seg/CalardisBlanc/4E.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/Skeletons/CalardisBlanc/1E.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/CalardisBlanc_1E.xyzrgb", "C:/Users/doll0/Documents/Grapes/Skeletons_seg_normals/CalardisBlanc/1E.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/Skeletons/CalardisBlanc/2E.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/CalardisBlanc_2E.xyzrgb", "C:/Users/doll0/Documents/Grapes/Skeletons_seg_normals/CalardisBlanc/2E.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/Skeletons/CalardisBlanc/3E.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/CalardisBlanc_3E.xyzrgb", "C:/Users/doll0/Documents/Grapes/Skeletons_seg_normals/CalardisBlanc/3E.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/Skeletons/CalardisBlanc/4E.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/CalardisBlanc_4E.xyzrgb", "C:/Users/doll0/Documents/Grapes/Skeletons_seg_normals/CalardisBlanc/4E.xyzrgbc"),
         # Dornfelder
-        ("C:/Users/doll0.SGN/Documents/Grapes/Skeletons/Dornfelder/1E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/GroundTruth/Dornfelder_1E.xyzrgb", "C:/Users/doll0.SGN/Documents/Grapes/Skeletons_seg/Dornfelder/1E.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/Skeletons/Dornfelder/1D.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/Dornfelder_1E.xyzrgb", "C:/Users/doll0/Documents/Grapes/Skeletons_seg_normals/Dornfelder/1E.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/Skeletons/Dornfelder/2D.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/Dornfelder_2E.xyzrgb", "C:/Users/doll0/Documents/Grapes/Skeletons_seg_normals/Dornfelder/2E.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/Skeletons/Dornfelder/3D.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/Dornfelder_3E.xyzrgb", "C:/Users/doll0/Documents/Grapes/Skeletons_seg_normals/Dornfelder/3E.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/Skeletons/Dornfelder/4D.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/Dornfelder_4E.xyzrgb", "C:/Users/doll0/Documents/Grapes/Skeletons_seg_normals/Dornfelder/4E.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/Skeletons/Dornfelder/5D.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/Dornfelder_5E.xyzrgb", "C:/Users/doll0/Documents/Grapes/Skeletons_seg_normals/Dornfelder/5E.xyzrgbc"),
+        # Pinot Noir
+        ("C:/Users/doll0/Documents/Grapes/Skeletons/PinotNoir/1.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/PinotNoir_1.xyzrgb", "C:/Users/doll0/Documents/Grapes/Skeletons_seg_normals/PinotNoir/1.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/Skeletons/PinotNoir/2.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/PinotNoir_2.xyzrgb", "C:/Users/doll0/Documents/Grapes/Skeletons_seg_normals/PinotNoir/2.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/Skeletons/PinotNoir/3.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/PinotNoir_3.xyzrgb", "C:/Users/doll0/Documents/Grapes/Skeletons_seg_normals/PinotNoir/3.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/Skeletons/PinotNoir/4.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/PinotNoir_4.xyzrgb", "C:/Users/doll0/Documents/Grapes/Skeletons_seg_normals/PinotNoir/4.xyzrgbc"),
+        ("C:/Users/doll0/Documents/Grapes/Skeletons/PinotNoir/5.xyzrgb", "C:/Users/doll0/Documents/Grapes/GroundTruth/PinotNoir_5.xyzrgb", "C:/Users/doll0/Documents/Grapes/Skeletons_seg_normals/PinotNoir/5.xyzrgbc"),
     ]
 
-    # combine ground truth and original files
+    # *** COMBINE SEGMENTATION GROUND TRUTH AND COLORS ***
 
     if COMBINE_DATA:
 
         print("\n\nCreating Data for Segmentation Task\n")
-        for (orig, seg, save) in tqdm(grapes_files):
-            # create data
-            create_segmentation_pointcloud(orig, seg, save)
+        # for (orig, seg, save) in tqdm(grapes_files):
+        #     # create data - copy colors
+        #     create_segmentation_pointcloud(orig, seg, save)
 
-        # for (orig, seg, save) in tqdm()
+        for (orig, seg, save) in tqdm(stem_files):
+            # create data - match color by distance
+            create_segmentation_pointcloud(orig, seg, save, use_nearest_color=True, approximate_normals=True)
 
-    # augment data
+
+    # *** AUGMENT DATA ***
 
     if AUGMENT_DATA:
 
         print("\n\nAugmenting Data\n")
-        for (_, _, combined) in tqdm(grapes_files):
+        # for (_, _, combined) in tqdm(grapes_files):
+        #     # create mirrored
+        #     mirror_pointcloud(combined, '.'.join(combined.split('.')[:-1]) + '_mirrored.xyzrgbc')
+
+        for (_, _, combined) in tqdm(stem_files):
             # create mirrored
             mirror_pointcloud(combined, '.'.join(combined.split('.')[:-1]) + '_mirrored.xyzrgbc')
+
+        

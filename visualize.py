@@ -64,18 +64,21 @@ if __name__ == '__main__':
     # create visualizer
     vis = Visualizer()
     # compare labeling ground trouth to original
-    # pc = vis.add_by_file("C:/Users/doll0/Documents/Grapes/BBCH87_89/CalardisBlanc/CalardisBlanc_Grape_2E.xyzrgb")
-    pc = vis.add_by_file("C:/Users/doll0/Documents/Grapes/GroundTruth/Riesling_1.xyzrgb")
-    pc = open3d.geometry.PointCloud(pc)
-    mirrored = np.asarray(pc.points)
-    mirrored[:, 0] *= -1
-    pc.points = open3d.utility.Vector3dVector(mirrored)
-    vis.add_by_pointcloud(pc)
-    
+    # pc = vis.add_by_file("C:/Users/doll0/Documents/Grapes/Skeletons_seg/CalardisBlanc/1E.xyzrgbc")
     # compare original to downsample
     # pc = vis.add_by_file("C:/Users/doll0/Documents/Grapes/Skeletons/CalardisBlanc/1E.xyzrgb")
     # pc_downsample = vis.add_by_pointcloud(open3d.open3d.geometry.voxel_down_sample(pc, voxel_size=1))
     # view ground thruth matched
     # vis.add_by_file("C:/Users/doll0/Documents/Grapes/Skeletons_Full/CalardisBlanc_1.xyzrgb")
+
+    from data import color2class
+
+    points = np.loadtxt("C:/Users/doll0/Documents/Grapes/Skeletons_seg_normals/CalardisBlanc/1E.xyzrgbc")
+    pc = open3d.geometry.PointCloud()
+    pc.points = open3d.utility.Vector3dVector(points[:, :3])
+    pc.colors = open3d.utility.Vector3dVector(points[:, 3:6])
+    pc.normals = open3d.utility.Vector3dVector(points[:, 6:9])
+    vis.add_by_pointcloud(pc)
+
     # run
     vis.run()

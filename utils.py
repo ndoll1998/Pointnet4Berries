@@ -36,6 +36,17 @@ def voxel_down_sample(points, colors, voxel_size):
     # return
     return points_downsamples, colors_downsamples
 
+def estimate_normals(points):
+    # create pointcloud object
+    pc = open3d.geometry.PointCloud()
+    pc.points = open3d.utility.Vector3dVector(points[:, :3])
+    # estimate normals and normalize afterwards
+    # open3d.open3d.geometry.estimate_normals(pc)
+    pc.estimate_normals()
+    pc.normalize_normals()
+    # return normals as numpy array
+    return np.asarray(pc.normals)
+
 
 """ Train Helpers """
 
@@ -133,8 +144,8 @@ def create_confusion_matrix(model, x_test, y_test, K, batch_size, device='cpu'):
 def visualize_confusion_table(confusion, classes, normalize=True, cmap=plt.cm.Blues):
 
     if normalize:
-        # normalize if asked for
-        confusion = confusion.astype('float') / confusion.sum(axis=1)[:, np.newaxis]
+        # normalize if asked for - handle division by zero
+        confusion = confusion.astype('float') / np.maximum(1, confusion.sum(axis=1)[:, np.newaxis])
     else:
         # convert to integers
         confusion = confusion.astype(int)

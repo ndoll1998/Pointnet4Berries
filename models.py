@@ -30,17 +30,24 @@ class Model_CLS(nn.Module):
         torch.save(self.encoder.state_dict(), os.path.join(file_path, "encoder.model"))
         torch.save(self.classifier.state_dict(), os.path.join(file_path, "classifier.model"))
 
+    def load_encoder(self, file_path):
+        # check if a file is given
+        if file_path is None:
+            return
+        # load encoder state dict
+        self.encoder.load_state_dict(torch.load(file_path, map_location='cpu'))
+
 
 class Model_SEG(nn.Module):
     """ Pointnet++ for Segmentation """
 
-    def __init__(self, K):
+    def __init__(self, K, feat_dim=3):
         super(Model_SEG, self).__init__()
         # save number of classes
         self.K = K
         # encoder and segmentater
-        self.encoder = PointnetPP_Encoder(pos_dim=3, feat_dim=3)
-        self.segmentater = PointnetPP_Segmentation(k=K, feat_dim=3)
+        self.encoder = PointnetPP_Encoder(pos_dim=3, feat_dim=feat_dim)
+        self.segmentater = PointnetPP_Segmentation(k=K, feat_dim=feat_dim)
         # creterion
         self.criterion = nn.NLLLoss()
 
@@ -57,4 +64,10 @@ class Model_SEG(nn.Module):
         torch.save(self.encoder.state_dict(), os.path.join(file_path, "encoder.model"))
         torch.save(self.segmentater.state_dict(), os.path.join(file_path, "segmentater.model"))
 
+    def load_encoder(self, file_path):
+        # check if a file is given
+        if file_path is None:
+            return
+        # load encoder state dict
+        self.encoder.load_state_dict(torch.load(file_path, map_location='cpu'))
 

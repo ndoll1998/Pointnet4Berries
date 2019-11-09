@@ -29,13 +29,13 @@ device = 'cuda:0'
 classes = ['CB', 'D', 'PN', 'R']
 K = len(classes)
 # path to files
-fpath = "C:/Users/doll0.SGN/Documents/Grapes/BBCH87_89/"
+fpath = "C:/Users/doll0/Documents/Grapes/BBCH87_89/"
 # number of points to use in training
 n_points = 20_000
 # number of samples per pointcloud
 n_samples = 10
 # save path
-save_path = "C:/Users/doll0.SGN/Documents/results/test"
+save_path = "C:/Users/doll0/Documents/results/test"
 os.makedirs(save_path, exist_ok=True)
 
 # training parameters
