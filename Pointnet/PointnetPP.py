@@ -64,6 +64,8 @@ class PointnetPP_Encoder(nn.Module):
 
     def __init__(self, pos_dim=3, feat_dim=0):
         super(PointnetPP_Encoder, self).__init__()
+        # save position and feature dims
+        self.pos_dim, self.feat_dim = pos_dim, feat_dim
         # create abstraction layers
         self.setAbstractions =  nn.ModuleList([
             SetAbstraction(1024, 32, 0.1, dim=feat_dim+pos_dim, shared=(32, 32, 64)),
@@ -72,8 +74,8 @@ class PointnetPP_Encoder(nn.Module):
             SetAbstraction(64,   32, 0.8, dim=256     +pos_dim, shared=(256, 256, 512))
         ])
     
-    def forward(self, pos, feats):
-        layer_output = [(pos, feats)]
+    def forward(self, x):
+        layer_output = [(x[:, :self.pos_dim], x[:, self.pos_dim:self.pos_dim+self.feat_dim])]
         # pass input through all abstraction layers
         for layer in self.setAbstractions:
             layer_output.append(layer(*layer_output[-1]))
@@ -83,15 +85,15 @@ class PointnetPP_Encoder(nn.Module):
 
 class PointnetPP_Classification(nn.Module):
 
-    def __init__(self, k, feat_dim=512, shared_A=(64, 64), shared_B=(64, 128, 1024), shape=(512, 256)):
+    def __init__(self, k, feat_dim=512+3, shared_A=(64, 64), shared_B=(64, 128, 1024), shape=(512, 256)):
         super(PointnetPP_Classification, self).__init__()
         # create a pointnet encoder and classifier
-        self.encoder = Pointnet_Encoder(dim=feat_dim)
+        self.encoder = Pointnet_Encoder(dim=feat_dim, shared_A=shared_A, shared_B=shared_B)
         self.decoder = Pointnet_Classification(k=k, g=shared_B[-1], shape=shape)
 
-    def forward(self, feats):
+    def forward(self, all_layers):
         # pass though pointnet
-        return self.decoder(self.encoder(feats)[0])
+        return self.decoder(self.encoder(torch.cat(all_layers[-1], dim=1))[0])
 
 
 class PointnetPP_Segmentation(nn.Module):
@@ -122,7 +124,9 @@ class PointnetPP_Segmentation(nn.Module):
             prop_feats = F.relu(bn(conv(prop_feats)))
         # classify
         prop_feats = self.dropout(prop_feats)
-        return F.log_softmax(self.classify(prop_feats), dim=1)
+        # transpose to match (batch, points, feats)
+        class_log_probs = F.log_softmax(self.classify(prop_feats), dim=1)
+        return class_log_probs.transpose(1, 2)
 
 
 # *** SCRIPT ***
@@ -135,11 +139,9 @@ if __name__ == '__main__':
     # create random points
     a = np.random.uniform(-1, 1, size=(2, 10, 50))
     a = torch.from_numpy(a).float()
-    # separate position from features
-    pos_A, feats_A = a[:, :3, :], a[:, 3:, :]
     # set abstraction
     encoder = PointnetPP_Encoder(pos_dim=pos_A.size(1), feat_dim=feats_A.size(1))
-    layer_outs = encoder.forward(pos_A, feats_A)
+    layer_outs = encoder.forward(a)
     # classifier
     classifier = PointnetPP_Classification(7)
     class_probs = classifier.forward(layer_outs[-1][1])

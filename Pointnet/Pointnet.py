@@ -121,8 +121,10 @@ class Pointnet_Segmentation(nn.Module):
         # pass through remaining mlp
         for (conv, bn) in zip(self.convs[1:], self.batchnorms[1:]):
             y = F.relu(bn(conv(y)))
-        # classify each point
-        return F.log_softmax(self.classify(y), dim=1)
+        # transpose to match (batch, points, feats)
+        class_log_probs = F.log_softmax(self.classify(y), dim=1)
+        return class_log_probs.transpose(1, 2)
+
         
 
 # *** SCRIPT ***
