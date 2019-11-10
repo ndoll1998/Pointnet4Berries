@@ -35,7 +35,14 @@ class Model_CLS(nn.Module):
         if file_path is None:
             return
         # load encoder state dict
-        self.encoder.load_state_dict(torch.load(file_path, map_location='cpu'))
+        self.encoder.load_state_dict(torch.load(file_path))
+
+    def load_classifier(self, file_path):
+        # check if a file is given
+        if file_path is None:
+            return
+        # load encoder state dict
+        self.classifier.load_state_dict(torch.load(file_path))
 
 
 class Model_SEG(nn.Module):
@@ -70,4 +77,12 @@ class Model_SEG(nn.Module):
             return
         # load encoder state dict
         self.encoder.load_state_dict(torch.load(file_path, map_location='cpu'))
+
+    def load_segmentater(self, file_path):
+        # check if a file is given
+        if file_path is None:
+            return
+        # load encoder state dict
+        self.segmentater.load_state_dict(torch.load(file_path, map_location='cpu'))
+
 

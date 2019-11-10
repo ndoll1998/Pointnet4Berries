@@ -3,8 +3,6 @@
 import open3d
 # import numpy
 import numpy as np
-# import sys to read args
-import sys
 # imprt os to check if file exists
 import os
 
@@ -59,26 +57,59 @@ class Visualizer:
         self.vis.run()
         self.vis.destroy_window()
 
+
 if __name__ == '__main__':
+    # import colors of classes
+    from data import color2class
+    # import segmentation model
+    from models import Model_SEG
+    # import torch
+    import torch
+
+    # *** SET UP ***
+    example_fpath = "C:/Users/doll0.SGN/Documents/Grapes/Skeletons_seg_normals/CalardisBlanc/1E.xyzrgbc"
+    encoder_fpath = "I:/Skeletons_normals_equally_distributed/encoder.model"
+    segmentater_fpath = "I:/Skeletons_normals_equally_distributed/segmentater.model"
+
+    # load file to numpy array
+    pc_raw = np.loadtxt(example_fpath)
+    # separate array
+    points = pc_raw[:, 0:3]
+    colors = pc_raw[:, 3:6] / 255
+    classes = pc_raw[:, -1:]
+    # create color from classes
+    class_colors = np.apply_along_axis(lambda i: color2class[int(i)], 1, classes) / 255
+    # create original pointcloud
+    pc_original = open3d.geometry.PointCloud()
+    pc_original.points = open3d.utility.Vector3dVector(points)
+    pc_original.colors = open3d.utility.Vector3dVector(colors)
+    # create ground truth poitncloud
+    pc_ground_truth = open3d.geometry.PointCloud()
+    pc_ground_truth.points = open3d.utility.Vector3dVector(points)
+    pc_ground_truth.colors = open3d.utility.Vector3dVector(class_colors)
+
+    # create and load model
+    model = Model_SEG(K=len(color2class), feat_dim=6)
+    model.load_encoder(encoder_fpath)
+    model.load_segmentater(segmentater_fpath)
+    model.eval()
+    # predict classes of points
+    x = torch.from_numpy(pc_raw[:, :-1]).float().t().unsqueeze(0)
+    log_probs = model.forward(x)
+    predicted = torch.max(log_probs, dim=2)[1]
+    predicted = predicted.cpu().numpy()
+    # get predicted colors
+    predicted_colors = np.apply_along_axis(lambda i: color2class[int(i)], 1, predicted.T) / 255
+    # build pointcloud
+    pc_predicted = open3d.geometry.PointCloud()
+    pc_predicted.points = open3d.utility.Vector3dVector(points)
+    pc_predicted.colors = open3d.utility.Vector3dVector(predicted_colors)
 
     # create visualizer
     vis = Visualizer()
-    # compare labeling ground trouth to original
-    # pc = vis.add_by_file("C:/Users/doll0/Documents/Grapes/Skeletons_seg/CalardisBlanc/1E.xyzrgbc")
-    # compare original to downsample
-    # pc = vis.add_by_file("C:/Users/doll0/Documents/Grapes/Skeletons/CalardisBlanc/1E.xyzrgb")
-    # pc_downsample = vis.add_by_pointcloud(open3d.open3d.geometry.voxel_down_sample(pc, voxel_size=1))
-    # view ground thruth matched
-    # vis.add_by_file("C:/Users/doll0/Documents/Grapes/Skeletons_Full/CalardisBlanc_1.xyzrgb")
-
-    from data import color2class
-
-    points = np.loadtxt("C:/Users/doll0/Documents/Grapes/Skeletons_seg_normals/CalardisBlanc/1E.xyzrgbc")
-    pc = open3d.geometry.PointCloud()
-    pc.points = open3d.utility.Vector3dVector(points[:, :3])
-    pc.colors = open3d.utility.Vector3dVector(points[:, 3:6])
-    pc.normals = open3d.utility.Vector3dVector(points[:, 6:9])
-    vis.add_by_pointcloud(pc)
-
+    # add to visualizer
+    vis.add_by_pointcloud(pc_original)
+    vis.add_by_pointcloud(pc_ground_truth)
+    vis.add_by_pointcloud(pc_predicted)
     # run
     vis.run()

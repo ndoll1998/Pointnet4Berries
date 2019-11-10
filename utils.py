@@ -41,8 +41,8 @@ def estimate_normals(points):
     pc = open3d.geometry.PointCloud()
     pc.points = open3d.utility.Vector3dVector(points[:, :3])
     # estimate normals and normalize afterwards
-    # open3d.open3d.geometry.estimate_normals(pc)
-    pc.estimate_normals()
+    open3d.open3d.geometry.estimate_normals(pc)
+    # pc.estimate_normals()
     pc.normalize_normals()
     # return normals as numpy array
     return np.asarray(pc.normals)

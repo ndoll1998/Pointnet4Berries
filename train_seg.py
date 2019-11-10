@@ -28,21 +28,22 @@ device = 'cuda:0'
 # number of classes
 K = 7
 # path to files
-fpath = "C:/Users/doll0/Documents/Grapes/Skeletons_seg_normals/"
+fpath = "C:/Users/doll0.SGN/Documents/Grapes/Skeletons_seg_normals/"
 # number of points to use in training
 n_points = 25_000
 # number of samples per pointcloud
 n_samples = 10
 # number of poinclouds per class for testing
-samples_for_testing = 2
-# initial encoder checkpoint
-encoder_init_checkpoint = None #"C:/Users/doll0/Documents/results/BBCH87_89/encoder.model"
+samples_for_testing = 1
+# initial checkpoint
+encoder_init_checkpoint = None
+segmentater_init_checkpoint = None
 # save path
-save_path = "C:/Users/doll0/Documents/results/Skeletons_normals"
+save_path = "C:/Users/doll0.SGN/Documents/results/Skeletons_normals"
 os.makedirs(save_path, exist_ok=True)
 
 # training parameters
-epochs = 500
+epochs = 5000
 batch_size = 3
 # update parameters after n batches
 update_interval = 2
@@ -65,11 +66,19 @@ x_train, y_train, x_test, y_test = build_data_seg(pointclouds, n_points, n_sampl
 # get feature-dimension
 feat_dim = x_train.size(1) - 3
 
+
+# *** ANALYSE DATA ***
+
+# print(list([np.sum(y_train.numpy()==i) for i in np.unique(y_train)]))
+# exit()
+
 # *** CREATE MODEL AND OPTIMIZER ***
 
 # create model
-model = Model_SEG(K=K, feat_dim=feat_dim).to(device)
+model = Model_SEG(K=K, feat_dim=feat_dim)
 model.load_encoder(encoder_init_checkpoint)
+model.load_segmentater(segmentater_init_checkpoint)
+model.to(device)
 # create optimizer
 optim = optimizer.Adam(model.parameters())
 
