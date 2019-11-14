@@ -21,33 +21,31 @@ class Visualizer:
         # number of geometries
         self.n = 0
 
-    def add_by_file(self, fpath):
+    def add_by_file(self, fpath, normalize=True):
         # check if file exists
         assert os.path.isfile(fpath), "File does not exist"
         # read file
         xyzrgb = np.loadtxt(fpath)
         points = xyzrgb[:, :3]
         colors = xyzrgb[:, 3:6] / 255
-        # create pointcloud
+        # add pointcloud by features
+        return self.add_by_features(points, colors, normalize=normalize)
+
+    def add_by_pointcloud(self, pc, normalize=True):
+        # get pointcloud features
+        points, colors = np.asarray(pc.points), np.asarray(pc.colors)
+        # add pointcloud by features
+        return self.add_by_features(points, colors, normalize=normalize)
+
+    def add_by_features(self, points, colors, normalize=True):
+        # normalize
+        points = normalize_pc(points) if normalize else points
+        # create pointcloud and set points and colors
         pc = open3d.geometry.PointCloud()
-        pc.points = open3d.utility.Vector3dVector(points)
+        pc.points = open3d.utility.Vector3dVector(points + np.array([self.n * 1.5, 0, 0]))
         pc.colors = open3d.utility.Vector3dVector(colors)
         # add pointcloud
-        self.add_by_pointcloud(pc)
-        # return pointcoud
-        return pc
-
-    def add_by_pointcloud(self, pc):
-        # create normalized pointcoud
-        pc_add = open3d.geometry.PointCloud()
-        pc_add.points = open3d.utility.Vector3dVector(normalize_pc(np.asarray(pc.points)))
-        pc_add.colors = pc.colors
-        # move pointcloud on x axis
-        pc_add.points = open3d.utility.Vector3dVector(
-            np.asarray(pc_add.points) + np.array([self.n * 1.5, 0, 0])
-        )
-        # add pointcloud
-        self.vis.add_geometry(pc_add)
+        self.vis.add_geometry(pc)
         self.n += 1
         # return pointcloud
         return pc
