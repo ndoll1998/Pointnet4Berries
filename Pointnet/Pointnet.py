@@ -54,8 +54,8 @@ class Pointnet_Encoder(nn.Module):
     def __init__(self, dim=3, shared_A=(64, 64), shared_B=(64, 128, 1024)):
         super(Pointnet_Encoder, self).__init__()
         # transform Networks
-        self.tnet_A = TNet(dim=dim)
-        self.tnet_B = TNet(dim=shared_A[-1])
+        self.tnet_A = TNet(dim=dim, encoder=(64,), decoder=(32,))
+        self.tnet_B = TNet(dim=shared_A[-1], encoder=(64,), decoder=(32,))
         # shared mlps
         self.convs_A = nn.ModuleList([nn.Conv1d(in_, out_, 1) for in_, out_ in zip((dim,) + shared_A[:-1], shared_A)])
         self.convs_B = nn.ModuleList([nn.Conv1d(in_, out_, 1) for in_, out_ in zip((shared_A[-1],) + shared_B[:-1], shared_B)])
@@ -91,7 +91,9 @@ class Pointnet_Classification(nn.Module):
         # dropout-layer
         self.dropout = nn.Dropout(dropout_rate)
 
-    def forward(self, x):
+    def forward(self, global_local_feats):
+        # get features of interest
+        x = global_local_feats[0]
         # pass theough linear layers
         for linear, bn in zip(self.linear, self.batchnorms):
             x = torch.sigmoid(bn(linear(x)))
@@ -113,8 +115,9 @@ class Pointnet_Segmentation(nn.Module):
         # create classification layer
         self.classify = nn.Conv1d(shared[-1], k, 1)
 
-    def forward(self, global_feats, local_feats):
-
+    def forward(self, global_local_feats):
+        # separate features
+        global_feats, local_feats = global_local_feats
         # pretend concatenation of global and local features
         y = self.convs[0](local_feats) + self.linear(global_feats).unsqueeze(2)
         y = F.relu(self.batchnorms[0](y))

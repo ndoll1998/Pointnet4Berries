@@ -58,56 +58,47 @@ class Visualizer:
 
 if __name__ == '__main__':
     # import colors of classes
-    from data import color2class
+    from data import color2class, build_data_seg
     # import segmentation model
     from models import Model_SEG
     # import torch
     import torch
 
     # *** SET UP ***
-    example_fpath = "C:/Users/doll0.SGN/Documents/Grapes/Skeletons_seg_normals/CalardisBlanc/1E.xyzrgbc"
-    encoder_fpath = "I:/Skeletons_normals_equally_distributed/encoder.model"
-    segmentater_fpath = "I:/Skeletons_normals_equally_distributed/segmentater.model"
+    example_fpath = "C:/Users/Niclas/Documents/Pointclouds/Skeleton/Processed/PinotNoir_1.xyzrgbc"
+    encoder_fpath = "results/segmentate/encoder.model"
+    segmentater_fpath = "results/segmentate/segmentater.model"
 
-    # load file to numpy array
+    # *** PARAMETERS ***
+
+    n_points = 10240
+    n_samples = 5
+
+    # get pointcloud features
     pc_raw = np.loadtxt(example_fpath)
-    # separate array
-    points = pc_raw[:, 0:3]
-    colors = pc_raw[:, 3:6] / 255
-    classes = pc_raw[:, -1:]
-    # create color from classes
+    points, colors, classes = normalize_pc(pc_raw[:, 0:3]), pc_raw[:, 3:6] / 255, pc_raw[:, -1:]
+    # get ground truth colors
     class_colors = np.apply_along_axis(lambda i: color2class[int(i)], 1, classes) / 255
-    # create original pointcloud
-    pc_original = open3d.geometry.PointCloud()
-    pc_original.points = open3d.utility.Vector3dVector(points)
-    pc_original.colors = open3d.utility.Vector3dVector(colors)
-    # create ground truth poitncloud
-    pc_ground_truth = open3d.geometry.PointCloud()
-    pc_ground_truth.points = open3d.utility.Vector3dVector(points)
-    pc_ground_truth.colors = open3d.utility.Vector3dVector(class_colors)
 
     # create and load model
-    model = Model_SEG(K=len(color2class), feat_dim=6)
+    model = Model_SEG(K=7, feat_dim=4)
     model.load_encoder(encoder_fpath)
     model.load_segmentater(segmentater_fpath)
     model.eval()
-    # predict classes of points
-    x = torch.from_numpy(pc_raw[:, :-1]).float().t().unsqueeze(0)
-    log_probs = model.forward(x)
-    predicted = torch.max(log_probs, dim=2)[1]
-    predicted = predicted.cpu().numpy()
-    # get predicted colors
-    predicted_colors = np.apply_along_axis(lambda i: color2class[int(i)], 1, predicted.T) / 255
-    # build pointcloud
-    pc_predicted = open3d.geometry.PointCloud()
-    pc_predicted.points = open3d.utility.Vector3dVector(points)
-    pc_predicted.colors = open3d.utility.Vector3dVector(predicted_colors)
 
+    # predict classes of points
+    x, _, _, _ = build_data_seg({'A': [pc_raw]}, n_points, n_samples, 0, features=['points', 'colors', 'length'])  
+    log_probs = model.forward(x)
+    predicted = torch.max(log_probs, dim=2)[1].view(-1, 1).cpu().numpy()
+    # get processed points and predicted colors
+    processed_points = x[:, :3, :].transpose(1, 2).view(-1, 3).cpu().numpy()
+    predicted_colors = np.apply_along_axis(lambda i: color2class[int(i)], 1, predicted) / 255
+    
     # create visualizer
     vis = Visualizer()
     # add to visualizer
-    vis.add_by_pointcloud(pc_original)
-    vis.add_by_pointcloud(pc_ground_truth)
-    vis.add_by_pointcloud(pc_predicted)
+    vis.add_by_features(points, colors, normalize=False)
+    vis.add_by_features(points, class_colors, normalize=False)
+    vis.add_by_features(processed_points, predicted_colors, normalize=False)
     # run
     vis.run()

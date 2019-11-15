@@ -15,11 +15,11 @@ from time import time
 
 """ Pointcloud Helpers """
 
-def normalize_pc(pc, axis=1):
+def normalize_pc(pc, reduce_axis=0, feature_axis=1):
 
     # transform relative to centroid and resclae
-    pc = pc - np.mean(pc, axis=0, keepdims=True)
-    pc = pc / np.max(np.linalg.norm(pc, axis=axis, keepdims=True))
+    pc = pc - np.mean(pc, axis=reduce_axis, keepdims=True)
+    pc = pc / np.max(np.linalg.norm(pc, axis=feature_axis, keepdims=True))
     # return 
     return pc
 
@@ -50,11 +50,10 @@ def estimate_normals(points):
 
 """ Train Helpers """
 
-def train_model(model, x_train, y_train, optim, epochs, batch_size, update_interval, save_interval, save_path, device='cpu'):
+def train_model(model, x_train, y_train, optim, epochs, batch_size, update_interval, device='cpu', callback=lambda:None):
     # set model mode
     model.train()
     # train model
-    losses = []
     start_time = time()
     train_size = x_train.shape[0]
     for e in range(1, 1+epochs):
@@ -78,40 +77,20 @@ def train_model(model, x_train, y_train, optim, epochs, batch_size, update_inter
             running_loss += loss.item()
             # optimization
             if (b > 0 and b % update_interval == 0) or (b == train_size//batch_size - 1):
-                print("Epoch: {0} -\tBatch: {1} -\tLoss: {2:.04f} -\tBatch Time: {3:.02f} -\tTotal Time: {4:.02f}".format(e, b, loss.item(), time() - batch_start_time, time() - start_time))
                 # update model parameters
                 optim.zero_grad()
                 loss.backward()
                 optim.step()
+                # log
+                print("Epoch: {0} -\tBatch: {1} -\tLoss: {2:.04f} -\tBatch Time: {3:.02f} -\tTotal Time: {4:.02f}".format(e, b, loss.item(), time() - batch_start_time, time() - start_time))
                 # reset for next iteration
                 batch_start_time = time()
                 loss = 0
             # remove - free gpu memory
             del x_batch, y_batch
         
-        # add loss to losses
-        losses.append(running_loss)
-        # save
-        if e % save_interval == 0:
-            # save model after enough number of epochs
-            model.save(save_path)
-            # create loss graph
-            fig, ax = plt.subplots(1, 1)
-            ax.set_xlabel("Epochs")
-            ax.set_ylabel("Loss")
-            # plot losses and save figure
-            ax.plot(losses)
-            try:
-                fig.savefig(os.path.join(save_path, "lossgraph.pdf"), format='pdf')
-            except Exception as e:
-                print("[EXCEPTION] during save of plot:", e)
-            # close figure to free memory
-            plt.close()
-
-    # save final encoder and classifier
-    model.save(save_path)
-    # return losses
-    return losses
+        # callback
+        callback(0 if e == epochs else e, running_loss)
 
 
 """ Evaluation Helpers """
