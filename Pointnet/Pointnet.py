@@ -105,7 +105,7 @@ class Pointnet_Classification(nn.Module):
 
 class Pointnet_Segmentation(nn.Module):
 
-    def __init__(self, k, g=1024, l=64, shared=(512, 256, 128, 128)):
+    def __init__(self, k, g=1024, l=64, shared=(512, 256, 128, 128), dropout_rate=0.3):
         super(Pointnet_Segmentation, self).__init__()
         # create linear layer for global features
         self.linear = nn.Linear(g, shared[0], bias=False)
@@ -114,6 +114,8 @@ class Pointnet_Segmentation(nn.Module):
         self.batchnorms = nn.ModuleList([nn.BatchNorm1d(n) for n in shared])
         # create classification layer
         self.classify = nn.Conv1d(shared[-1], k, 1)
+        # dropout-layer
+        self.dropout = nn.Dropout(dropout_rate)
 
     def forward(self, global_local_feats):
         # separate features
@@ -124,6 +126,8 @@ class Pointnet_Segmentation(nn.Module):
         # pass through remaining mlp
         for (conv, bn) in zip(self.convs[1:], self.batchnorms[1:]):
             y = F.relu(bn(conv(y)))
+        # apply dropout
+        y = self.dropout(y)
         # transpose to match (batch, points, feats)
         class_log_probs = F.log_softmax(self.classify(y), dim=1)
         return class_log_probs.transpose(1, 2)
