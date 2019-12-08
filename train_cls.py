@@ -177,7 +177,7 @@ for epoch in range(epochs):
 
     # save board
     fig = tb.create_fig([[["Train_Loss", "Test_Loss"]], [classes], [["Confusion"]]], figsize=(8, 11))
-    fig.savefig(os.path.join(save_path, "baord.pdf"), format="pdf")
+    fig.savefig(os.path.join(save_path, "board.pdf"), format="pdf")
     # save model
     model.save(save_path, prefix="E{0}-".format(epoch))
     # end epoch

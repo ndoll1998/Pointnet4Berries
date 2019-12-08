@@ -19,6 +19,7 @@ import json
 from time import time
 from tqdm import tqdm
 from random import sample
+from collections import OrderedDict
 
 
 # *** PARAMS ***
@@ -27,14 +28,20 @@ from random import sample
 device = 'cpu'
 
 # number of classes
-classes = ['twig', 'subtwig', 'rachis', 'peduncle', 'berry', 'hook', 'None']
-K = len(classes)
+class_bins = OrderedDict({
+    'twig': ['twig', 'subtwig', 'berry'], 
+    'rachis': ['rachis'],
+    'peduncle': ['peduncle'],
+    'hook': ['hook'],
+    'None': ['None']
+})
+K = len(class_bins)
 # used features
-features = ['points', 'colors', 'length']
-feature_dim = 4
+features = ['points', 'colors']
+feature_dim = 3
 # number of points and samples
 n_points = 1024
-n_samples = 500
+n_samples = 40
 # number of poinclouds per class for testing
 n_test_pcs = 1
 
@@ -42,8 +49,8 @@ n_test_pcs = 1
 encoder_init_checkpoint = None
 segmentater_init_checkpoint = None
 # training parameters
-epochs = 10
-batch_size = 10
+epochs = 20
+batch_size = 4
 
 # path to files
 fpath = "H:/Pointclouds/Skeleton/Processed"
@@ -82,8 +89,8 @@ for class_name, pcs in pointclouds.items():
     test_pointclouds[class_name] = sum([pcs[n] for n in test_pc_names], [])
 
 # create training and testing datasets
-train_data = TensorDataset(*build_data_seg(train_pointclouds, n_points, n_samples, features=features))
-test_data = TensorDataset(*build_data_seg(test_pointclouds, n_points, n_samples, features=features))
+train_data = TensorDataset(*build_data_seg(train_pointclouds, n_points, n_samples, class_bins, features=features))
+test_data = TensorDataset(*build_data_seg(test_pointclouds, n_points, n_samples, class_bins, features=features))
 # create training and testing dataloaders
 train_dataloader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
 test_dataloader = DataLoader(test_data, shuffle=False, batch_size=1000)
@@ -105,7 +112,7 @@ optim = optimizer.Adam(model.parameters())
 with open(os.path.join(save_path, "config.json"), 'w+') as f:
     config = {
         "task": "segmentation",
-        "classes": classes,
+        "classes": class_bins,
         "features": features,
         "n_points": n_points,
         "n_samples": n_samples, 
@@ -113,9 +120,9 @@ with open(os.path.join(save_path, "config.json"), 'w+') as f:
         "epochs": epochs,
         "batch_size": batch_size, 
         "n_train_samples": len(train_data),
-        "n_train_points": dict(zip(classes, map(int, np.bincount(train_data[:][-1].flatten().numpy())))),
+        "n_train_points": dict(zip(class_bins.keys(), map(int, np.bincount(train_data[:][-1].flatten().numpy())))),
         "n_test_samples": len(test_data),
-        "n_test_points": dict(zip(classes, map(int, np.bincount(test_data[:][-1].flatten().numpy()))))
+        "n_test_points": dict(zip(class_bins.keys(), map(int, np.bincount(test_data[:][-1].flatten().numpy()))))
     }
     json.dump(config, f, indent=2, sort_keys=True)
 
@@ -124,8 +131,8 @@ with open(os.path.join(save_path, "config.json"), 'w+') as f:
 
 print("TRAINING...")
 # track losses and f-scores
-tb = TorchBoard("Train_Loss", "Test_Loss", *classes)
-tb.add_stat(ConfusionMatrix(classes, name="Confusion", normalize=True))
+tb = TorchBoard("Train_Loss", "Test_Loss", *class_bins.keys())
+tb.add_stat(ConfusionMatrix(class_bins.keys(), name="Confusion", normalize=True))
 
 start = time()
 for epoch in range(epochs):
@@ -175,12 +182,12 @@ for epoch in range(epochs):
     tb.Test_Loss += running_loss / len(test_dataloader)
     # compute f-scores from confusion matrix
     f_scores = compute_fscores(confusion_matrix)
-    for c, f in zip(classes, f_scores):
+    for c, f in zip(class_bins.keys(), f_scores):
         tb[c] += f
 
     # save board
-    fig = tb.create_fig([[["Train_Loss", "Test_Loss"]], [classes], [["Confusion"]]], figsize=(8, 11))
-    fig.savefig(os.path.join(save_path, "baord.pdf"), format="pdf")
+    fig = tb.create_fig([[["Train_Loss", "Test_Loss"]], [class_bins.keys()], [["Confusion"]]], figsize=(8, 11))
+    fig.savefig(os.path.join(save_path, "board.pdf"), format="pdf")
     # save model
     model.save(save_path, prefix="E{0}-".format(epoch))
     # end epoch

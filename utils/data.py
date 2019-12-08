@@ -9,9 +9,31 @@ from .utils import normalize_pc, voxel_down_sample, estimate_normals
 
 # import others
 from random import sample
+from collections import OrderedDict
 
+# map color to class by index
+class2color = OrderedDict({
+    'twig':     (255, 0, 0), 
+    'subtwig':  (0, 255, 0), 
+    'rachis':   (0, 0, 255), 
+    'peduncle': (200, 140, 0), 
+    'berry':    (0, 200, 200), 
+    'hook':     (255, 0, 255),
+    "None":     (0, 0, 0)
+})
 
-# *** GENERATE TRAINING / TESTING DATA ***
+# *** DATA GENERATION HELPERS ***
+
+def apply_bins(x, bins):
+    binned_x = x.copy()
+    for i, bin in enumerate(bins.values()):
+        # apply bin
+        for n in bin:
+            # get index of class and apply bin
+            j = list(class2color.keys()).index(n)
+            binned_x[x == j] = i
+    # return 
+    return binned_x
 
 def get_subsamples(pc, n_points, n_samples):
     """ randomly select an equal amount of points from each class """
@@ -68,6 +90,9 @@ def combine_features(data, features=['points', 'colors', 'length', 'pass_through
     # stack features
     return np.concatenate(feats, axis=2)
 
+
+# *** GENERATE TRAINING / TESTING DATA ***
+
 def build_data_cls(pointclouds_per_class, n_points, n_samples, features=['points', 'color', 'length']):
     """ Create Data for classification task """
 
@@ -84,7 +109,7 @@ def build_data_cls(pointclouds_per_class, n_points, n_samples, features=['points
 
     return x, y
 
-def build_data_seg(pointclouds, n_points, n_samples, features=['points', 'color', 'length']):
+def build_data_seg(pointclouds, n_points, n_samples, class_bins=None, features=['points', 'color', 'length']):
     """ Create Data for segmentation task """
 
     # build data from given pointclouds
@@ -93,6 +118,8 @@ def build_data_seg(pointclouds, n_points, n_samples, features=['points', 'color'
     x = np.array(x, dtype=np.float32)
     # separate input and class
     x, y, = x[..., :-1], x[..., -1:]
+    # apply bins to y if bins are given
+    y = y if class_bins is None else apply_bins(y, class_bins)
     # create input feature vector
     x = combine_features(x, features=features)
     # convert to tensors
@@ -104,10 +131,6 @@ def build_data_seg(pointclouds, n_points, n_samples, features=['points', 'color'
 
 
 # *** PREPARE DATA FOR SEGMENTATION ***
-
-# map color to class by index
-# twig - subtwig - rachis - peduncle - berry - hook
-color2class = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (200, 140, 0), (0, 200, 200), (255, 0, 255)]
 
 def get_color_from_nearest(query_points, points, colors):
     # build tree
@@ -124,6 +147,8 @@ def create_segmentation_pointcloud(original_file, segmentation_file, save_file, 
     # create feature-stack
     stack = (original,)
 
+    # map colors to classes by index
+    color2class = list(class2color.values())
     # get segmentations
     if use_nearest_color:
         # sort out points with colors not matching to any class
@@ -150,8 +175,6 @@ def mirror_pointcloud(original_file, save_file):
     mirrored[:, 0] *= -1
     # save to file
     np.savetxt(save_file, mirrored)
-
-
 
 
 # *** SCRIPT ***
