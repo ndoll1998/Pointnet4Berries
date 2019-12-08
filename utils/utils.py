@@ -52,51 +52,6 @@ def estimate_normals(points):
     return np.asarray(pc.normals)
 
 
-""" Train Helpers """
-
-def train_model(model, x_train, y_train, optim, epochs, batch_size, update_interval, device='cpu', callback=lambda:None):
-    # set model mode
-    model.train()
-    # train model
-    start_time = time()
-    train_size = x_train.shape[0]
-    for e in range(1, 1+epochs):
-        # shuffle data
-        shuffle_idx = np.arange(train_size)
-        np.random.shuffle(shuffle_idx)
-        x_train, y_train = x_train[shuffle_idx], y_train[shuffle_idx]
-        # reset
-        loss = 0
-        running_loss = 0
-        batch_start_time = time()
-        # batch-loop
-        for b in range(train_size//batch_size):
-            # get batch
-            x_batch = x_train[b * batch_size : (b+1) * batch_size].to(device).float()
-            y_batch = y_train[b * batch_size : (b+1) * batch_size].to(device).long()
-            # pass through model
-            class_log_probs = model.forward(x_batch)
-            # compute loss
-            loss += model.loss(class_log_probs, y_batch)
-            running_loss += loss.item()
-            # optimization
-            if (b > 0 and b % update_interval == 0) or (b == train_size//batch_size - 1):
-                # update model parameters
-                optim.zero_grad()
-                loss.backward()
-                optim.step()
-                # log
-                print("Epoch: {0} -\tBatch: {1} -\tLoss: {2:.04f} -\tBatch Time: {3:.02f} -\tTotal Time: {4:.02f}".format(e, b, loss.item(), time() - batch_start_time, time() - start_time))
-                # reset for next iteration
-                batch_start_time = time()
-                loss = 0
-            # remove - free gpu memory
-            del x_batch, y_batch
-        
-        # callback
-        callback(0 if e == epochs else e, running_loss)
-
-
 """ Evaluation Helpers """
 
 def compute_fscores(confusion_matrix):
