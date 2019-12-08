@@ -4,78 +4,95 @@ import numpy as np
 # import torch
 import torch
 import torch.optim as optimizer
+from torch.utils.data import TensorDataset, DataLoader
 
 # import model
-from models import Model_SEG
-# import data-helpers
-from data import build_data_seg
+from Pointnet.models import Model_SEG
 # import utils
-from utils import normalize_pc, visualize_confusion_table, create_confusion_matrix, train_model
+from utils.data import build_data_seg
+from utils.utils import compute_fscores
+from utils.torchBoard import TorchBoard, ConfusionMatrix
 
 # other imports
 import os
+import json
+from time import time
 from tqdm import tqdm
-from random import sample, shuffle
-import matplotlib.pyplot as plt
-
-# numpy percision for printing
-np.set_printoptions(precision=3)
+from random import sample
 
 
 # *** PARAMS ***
 
 # cuda device
 device = 'cpu'
+
 # number of classes
-K = 7
-classes = list(range(1, K+1))
-# path to files
-fpath = "C:/Users/Niclas/Documents/Pointclouds/Skeleton/Processed"
-# number of points to use in training
+classes = ['twig', 'subtwig', 'rachis', 'peduncle', 'berry', 'hook', 'None']
+K = len(classes)
+# used features
+features = ['points', 'colors', 'length']
+feature_dim = 4
+# number of points and samples
 n_points = 1024
-# number of samples per pointcloud
-n_samples = 3000
+n_samples = 500
 # number of poinclouds per class for testing
-samples_for_testing = 1
+n_test_pcs = 1
+
 # initial checkpoint
 encoder_init_checkpoint = None
 segmentater_init_checkpoint = None
-# save path
-save_path = "results/segmentate"
-os.makedirs(save_path, exist_ok=True)
-
 # training parameters
-epochs = 100
+epochs = 10
 batch_size = 10
-# update parameters after n batches
-update_interval = 1
-# save model after every n-th epoch
-save_interval = 1
+
+# path to files
+fpath = "H:/Pointclouds/Skeleton/Processed"
+# save path
+save_path = "H:/results/segmentation"
+os.makedirs(save_path, exist_ok=True)
 
 
 # *** READ AND CREATE TRAINING / TESTING DATA ***
 
+print("LOADING POINTCLOUDS...")
 pointclouds = {}
 # open files
 for fname in tqdm(os.listdir(fpath)):
-    # get class of pointcloud
-    class_name = fname.split('_')[0]
+    # get name of pointcloud
+    class_name, name = fname.replace('.xyzrgbc', '').split('_')[:2]
     # check for entry in pointclouds
     if class_name not in pointclouds:
-        pointclouds[class_name] = []
+        pointclouds[class_name] = {}
+    if name not in pointclouds[class_name]:
+        pointclouds[class_name][name] = []
     # create full path to file
     full_path = os.path.join(fpath, fname)
     # read pointcloud
-    pointclouds[class_name].append(np.loadtxt(full_path, dtype=np.float32))
-    
-# build data from pointclouds
-x_train, y_train, x_test, y_test = build_data_seg(pointclouds, n_points, n_samples, samples_for_testing, features=['points', 'colors', 'length'])
+    pointclouds[class_name][name].append(np.loadtxt(full_path, dtype=np.float32))
+
+print("PREPROCESSING POINTCLOUDS...")
+# separate pointclouds into training and testing samples
+train_pointclouds, test_pointclouds = {}, {}
+for class_name, pcs in pointclouds.items():
+    # get random subset to train from
+    train_pc_names = sample(pcs.keys(), len(pcs) - n_test_pcs)
+    test_pc_names = set(pcs.keys()) - set(train_pc_names)
+    # add to dicts
+    train_pointclouds[class_name] = sum([pcs[n] for n in train_pc_names], [])
+    test_pointclouds[class_name] = sum([pcs[n] for n in test_pc_names], [])
+
+# create training and testing datasets
+train_data = TensorDataset(*build_data_seg(train_pointclouds, n_points, n_samples, features=features))
+test_data = TensorDataset(*build_data_seg(test_pointclouds, n_points, n_samples, features=features))
+# create training and testing dataloaders
+train_dataloader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
+test_dataloader = DataLoader(test_data, shuffle=False, batch_size=1000)
 
 
 # *** CREATE MODEL AND OPTIMIZER ***
 
 # create model
-model = Model_SEG(K=K, feat_dim=x_train.size(1) - 3)
+model = Model_SEG(K=K, feat_dim=feature_dim)
 model.load_encoder(encoder_init_checkpoint)
 model.load_segmentater(segmentater_init_checkpoint)
 model.to(device)
@@ -83,44 +100,88 @@ model.to(device)
 optim = optimizer.Adam(model.parameters())
 
 
+# *** SAVE PARAMETERS ***
+
+with open(os.path.join(save_path, "config.json"), 'w+') as f:
+    config = {
+        "task": "segmentation",
+        "classes": classes,
+        "features": features,
+        "n_points": n_points,
+        "n_samples": n_samples, 
+        "n_test_pointclouds": n_test_pcs,
+        "epochs": epochs,
+        "batch_size": batch_size, 
+        "n_train_samples": len(train_data),
+        "n_train_points": dict(zip(classes, map(int, np.bincount(train_data[:][-1].flatten().numpy())))),
+        "n_test_samples": len(test_data),
+        "n_test_points": dict(zip(classes, map(int, np.bincount(test_data[:][-1].flatten().numpy()))))
+    }
+    json.dump(config, f, indent=2, sort_keys=True)
+
+
 # *** TRAIN AND TEST MODEL ***
 
-# track losses
-losses = []
-# callback function
-def callback(epoch, loss):
-    # add loss to losses
-    losses.append(loss)
-    # save
-    if epoch % save_interval == 0:
+print("TRAINING...")
+# track losses and f-scores
+tb = TorchBoard("Train_Loss", "Test_Loss", *classes)
+tb.add_stat(ConfusionMatrix(classes, name="Confusion", normalize=True))
 
-        # build confusion table
-        test_confusion = create_confusion_matrix(model, x_test, y_test, len(classes), batch_size, device=device)
-        train_confusion = create_confusion_matrix(model, x_train, y_train, len(classes), batch_size, device=device)
-        try:
-            # save confusion matrix
-            visualize_confusion_table(test_confusion, classes=classes, normalize=True)[0].savefig(os.path.join(save_path, "confusion-test.pdf"), format='pdf')
-            visualize_confusion_table(train_confusion, classes=classes, normalize=True)[0].savefig(os.path.join(save_path, "confusion-train.pdf"), format='pdf')
-        except Exception as e:
-            # handle exception
-            print("[EXCEPTION]", e)
+start = time()
+for epoch in range(epochs):
 
-        # create loss graph
-        fig, ax = plt.subplots(1, 1)
-        ax.set_xlabel("Epochs")
-        ax.set_ylabel("Loss")
-        # plot losses and save figure
-        ax.plot(losses)
-        try:
-            # save loss-graph
-            fig.savefig(os.path.join(save_path, "lossgraph.pdf"), format='pdf')
-        except Exception as e:
-            print("[EXCEPTION] during save of plot:", e)
+    # train model
+    model.train()
+    # reset for epoch
+    start_epoch = time()
+    running_loss = 0
 
-        # close figure to free memory
-        plt.close()
-        # save model
-        model.save(save_path)
+    # train loop
+    for i, (x, y_hat) in enumerate(train_dataloader):
+        optim.zero_grad()
 
-# train
-train_model(model, x_train, y_train, optim, epochs, batch_size, update_interval, device=device, callback=callback)
+        # pass through model
+        y = model.forward(x.to(device))
+        # compute error
+        loss = model.loss(y, y_hat.to(device))
+        running_loss += loss.item()
+        # update model parameters
+        loss.backward()
+        optim.step()
+
+        # log
+        print("Epoch {0}/{1} - Batch {2}/{3}\t- Average Loss {4:.02f}\t - Time {5:.04f}s"
+            .format(epoch+1, epochs, i+1, len(train_dataloader), running_loss/(i+1), time() - start), end='\r')
+
+    # add to statistic
+    tb.Train_Loss += running_loss / len(train_dataloader)
+
+    # eval model
+    model.eval()
+    # initialize confusion matrix
+    confusion_matrix = np.zeros((K, K))
+    running_loss = 0
+
+    for x, y_hat in test_dataloader:
+        # pass through model and compute error
+        y = model.forward(x.to(device))
+        running_loss += model.loss(y, y_hat.to(device)).item()
+        # update confusion matrix
+        for actual, pred in zip(y_hat.flatten(), torch.argmax(y.reshape(-1, K), dim=-1)):
+            confusion_matrix[actual, pred] += 1
+
+    # update board
+    tb.Confusion += confusion_matrix
+    tb.Test_Loss += running_loss / len(test_dataloader)
+    # compute f-scores from confusion matrix
+    f_scores = compute_fscores(confusion_matrix)
+    for c, f in zip(classes, f_scores):
+        tb[c] += f
+
+    # save board
+    fig = tb.create_fig([[["Train_Loss", "Test_Loss"]], [classes], [["Confusion"]]], figsize=(8, 11))
+    fig.savefig(os.path.join(save_path, "baord.pdf"), format="pdf")
+    # save model
+    model.save(save_path, prefix="E{0}-".format(epoch))
+    # end epoch
+    print()

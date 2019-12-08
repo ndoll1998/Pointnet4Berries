@@ -99,59 +99,16 @@ def train_model(model, x_train, y_train, optim, epochs, batch_size, update_inter
 
 """ Evaluation Helpers """
 
-def create_confusion_matrix(model, x_test, y_test, K, batch_size, device='cpu'):
-    # confusion matrix
-    confusion = np.zeros((K, K))
-    # set eval
-    model.eval()
-    # no gradients
-    with torch.no_grad():
-        test_size = x_test.shape[0]
-        for b in range(math.floor(test_size/batch_size)):
-            # get batch
-            x_batch = x_test[b * batch_size : (b+1) * batch_size].to(device).float()
-            y_batch = y_test[b * batch_size : (b+1) * batch_size].numpy().astype(int)
-            # pass through model
-            class_probs = model.forward(x_batch)
-            # get predicted classes
-            predicted = torch.max(class_probs.reshape(-1, K), dim=-1)[1].cpu().numpy()
-            # evaluate
-            for actual, pred in zip(y_batch.flatten(), predicted):
-                confusion[actual, pred] += 1
-            # remove
-            del x_batch, y_batch
+def compute_fscores(confusion_matrix):
 
-    # return confusion table
-    return confusion
+    # count true positives, false positives and false negatives
+    tp = np.diag(confusion_matrix)
+    fp = confusion_matrix.sum(axis=0) - tp
+    fn = confusion_matrix.sum(axis=1) - tp
     
-def visualize_confusion_table(confusion, classes, normalize=True, cmap=plt.cm.Blues):
+    # compute precision and recall
+    p, r = tp / (tp + fp + 1e-10), tp / (tp + fn + 1e-10)
+    # compute fscores
+    scores = 2 * p * r / (p + r + 1e-10)
 
-    if normalize:
-        # normalize if asked for - handle division by zero
-        confusion = confusion.astype('float') / np.maximum(1, confusion.sum(axis=1)[:, np.newaxis])
-    else:
-        # convert to integers
-        confusion = confusion.astype(int)
-    # create and configure axes
-    fig, ax = plt.subplots()
-    ax.set(xticks=np.arange(confusion.shape[1]),
-           yticks=np.arange(confusion.shape[0]),
-           xticklabels=classes, yticklabels=classes,
-           ylabel='True label',
-           xlabel='Predicted label')
-    # create confusion matrix and colorbar
-    im = ax.imshow(confusion, interpolation='nearest', cmap=cmap)
-    ax.figure.colorbar(im, ax=ax)
-    # Rotate the tick labels and set their alignment.
-    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
-    # Loop over data dimensions and create text annotations.
-    fmt = '.2f' if normalize else 'd'
-    thresh = confusion.max() / 2.
-    for i in range(confusion.shape[0]):
-        for j in range(confusion.shape[1]):
-            ax.text(j, i, format(confusion[i, j], fmt),
-                    ha="center", va="center",
-                    color="white" if confusion[i, j] > thresh else "black")
-    # set tight layout and return axes
-    fig.tight_layout()
-    return fig, ax
+    return scores

@@ -36,10 +36,10 @@ class Model_CLS(nn.Module):
         # compute loss
         return self.criterion(y, y_hat)
 
-    def save(self, file_path):
+    def save(self, file_path, prefix=""):
         # save encoder and classifier separatly
-        torch.save(self.encoder.state_dict(), os.path.join(file_path, "encoder.model"))
-        torch.save(self.classifier.state_dict(), os.path.join(file_path, "classifier.model"))
+        torch.save(self.encoder.state_dict(), os.path.join(file_path, prefix + "encoder.model"))
+        torch.save(self.classifier.state_dict(), os.path.join(file_path, prefix + "classifier.model"))
 
     def load_encoder(self, file_path):
         # check if a file is given
@@ -76,10 +76,10 @@ class Model_SEG(nn.Module):
         # compute loss
         return self.criterion(y.reshape(-1, self.K), y_hat.flatten())
 
-    def save(self, file_path):
+    def save(self, file_path, prefix=""):
         # save encoder and segmentater separatly
-        torch.save(self.encoder.state_dict(), os.path.join(file_path, "encoder.model"))
-        torch.save(self.segmentater.state_dict(), os.path.join(file_path, "segmentater.model"))
+        torch.save(self.encoder.state_dict(), os.path.join(file_path, prefix + "encoder.model"))
+        torch.save(self.segmentater.state_dict(), os.path.join(file_path, prefix + "segmentater.model"))
 
     def load_encoder(self, file_path):
         # check if a file is given
@@ -118,10 +118,10 @@ class ModelPP_CLS(nn.Module):
         # compute loss
         return self.criterion(y, y_hat)
 
-    def save(self, file_path):
+    def save(self, file_path, prefix=""):
         # save encoder and classifier separatly
-        torch.save(self.encoder.state_dict(), os.path.join(file_path, "encoder.model"))
-        torch.save(self.classifier.state_dict(), os.path.join(file_path, "classifier.model"))
+        torch.save(self.encoder.state_dict(), os.path.join(file_path, prefix + "encoder++.model"))
+        torch.save(self.classifier.state_dict(), os.path.join(file_path, prefix + "classifier++.model"))
 
     def load_encoder(self, file_path):
         # check if a file is given
@@ -158,10 +158,10 @@ class ModelPP_SEG(nn.Module):
         # compute loss
         return self.criterion(y.reshape(-1, self.K), y_hat.flatten())
 
-    def save(self, file_path):
+    def save(self, file_path, prefix=""):
         # save encoder and segmentater separatly
-        torch.save(self.encoder.state_dict(), os.path.join(file_path, "encoder.model"))
-        torch.save(self.segmentater.state_dict(), os.path.join(file_path, "segmentater.model"))
+        torch.save(self.encoder.state_dict(), os.path.join(file_path, prefix + "encoder++.model"))
+        torch.save(self.segmentater.state_dict(), os.path.join(file_path, prefix + "segmentater++.model"))
 
     def load_encoder(self, file_path):
         # check if a file is given

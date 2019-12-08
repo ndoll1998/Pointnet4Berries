@@ -5,7 +5,7 @@ import torch
 # import NearestNeighbors-Algorithm from sklearn
 from sklearn.neighbors import NearestNeighbors
 # import utils
-from utils import normalize_pc, voxel_down_sample, estimate_normals
+from .utils import normalize_pc, voxel_down_sample, estimate_normals
 
 # import others
 from random import sample
@@ -24,7 +24,7 @@ def get_subsamples(pc, n_points, n_samples):
     class_idx = [list(np.where(pc[:, -1] == i)[0]) for i in np.unique(pc[:, -1])]
     n_points_per_class = n_points // len(class_idx)
     # create multiple subclouds from one cloud
-    for _ in range(n_samples):
+    for _ in range(min(n_samples, (pc.shape[0] // n_points)**2)):
         # get random subset of points in each class
         idx = sum([sample(idx_, min(n_points_per_class, len(idx_))) for idx_ in class_idx], [])
         # fill with more random points
@@ -34,27 +34,19 @@ def get_subsamples(pc, n_points, n_samples):
     # return samples
     return samples
 
-def create_train_test_data(pointclouds_per_class, n_points, n_samples, samples_for_testing):
+def build_data(pointclouds_per_class, n_points, n_samples):
 
-    x_train, y_train = [], []
-    x_test, y_test = [], []
+    x, y = [], []
     for i, pcs in enumerate(pointclouds_per_class.values()):
-        # pick a random subset as train-set for current type
-        train_idx = sample(range(len(pcs)), len(pcs) - samples_for_testing)
-        test_idx = set(range(len(pcs))).difference(train_idx)
-        # build train data
-        for j in train_idx:
+        # build data
+        for pc in pcs:
             # create multiple subclouds from one cloud
-            x_train += get_subsamples(pcs[j], n_points, n_samples)
-            y_train += [i] * n_samples
-        # build test data
-        for j in test_idx:
-            x_test += get_subsamples(pcs[j], n_points, n_samples)
-            y_test += [i] * n_samples
+            x += get_subsamples(pc, n_points, n_samples)
+            y += [i] * n_samples
 
-    return (x_train, y_train), (x_test, y_test)
+    return x, y
 
-def combine_features(data, features=['points', 'colors', 'length']):
+def combine_features(data, features=['points', 'colors', 'length', 'pass_through']):
     # separate data
     points, colors = data[:, :, 0:3], data[:, :, 3:6]
     # normalize
@@ -70,51 +62,51 @@ def combine_features(data, features=['points', 'colors', 'length']):
     # add length feature
     if 'length' in features:
         feats.append(np.linalg.norm(points, axis=2, keepdims=True))
+    # add features given in data
+    if 'pass_through' in features:
+        feats.append(data[:, :, 6:])
     # stack features
     return np.concatenate(feats, axis=2)
 
-def build_data_cls(pointclouds_per_class, n_points, n_samples, samples_for_testing=5, features=['points', 'color', 'length']):
-    
-    # generate training and testing data
-    (x_train, y_train), (x_test, y_test) = create_train_test_data(pointclouds_per_class, n_points, n_samples, samples_for_testing)
-    # convert lists to numpy
-    x_train, x_test = np.array(x_train, dtype=np.float32), np.array(x_test, dtype=np.float32)
-    y_train, y_test = np.array(y_train, dtype=np.long), np.array(y_test, dtype=np.long)
-    # create inputs
-    x_train = combine_features(x_train, features=features)    
-    x_test = (combine_features(x_test, features=features) if samples_for_testing > 0 else None)
-    # convert to tensors and copy to device
-    x_train, x_test = torch.from_numpy(x_train), (torch.from_numpy(x_test) if samples_for_testing > 0 else None)
-    y_train, y_test = torch.from_numpy(y_train), (torch.from_numpy(y_test) if samples_for_testing > 0 else None)
-    # transpose
-    x_train, x_test = x_train.transpose(1, 2), (x_test.transpose(1, 2) if samples_for_testing > 0 else None)
-    # return data
-    return x_train, y_train, x_test, y_test
+def build_data_cls(pointclouds_per_class, n_points, n_samples, features=['points', 'color', 'length']):
+    """ Create Data for classification task """
 
-def build_data_seg(pointclouds_per_class, n_points, n_samples, samples_for_testing=5, features=['points', 'color', 'length']):
-
-    # generate training and testing data
-    (train, _), (test, _) = create_train_test_data(pointclouds_per_class, n_points, n_samples, samples_for_testing)
+    # build data from given pointclouds
+    x, y = build_data(pointclouds_per_class, n_points, n_samples)
     # convert lists to numpy
-    train, test = np.array(train, dtype=np.float32), np.array(test, dtype=np.float32)
-    # separate input and class-labels
-    x_train, y_train = train[:, :, :-1], train[:, :, -1:]
-    x_test, y_test = (test[:, :, :-1], test[:, :, -1:]) if samples_for_testing > 0 else (None, None)
-    # create inputs
-    x_train = combine_features(x_train, features=features)    
-    x_test = combine_features(x_test, features=features) if samples_for_testing > 0 else (None)
+    x, y = np.array(x, dtype=np.float32), np.array(y, dtype=np.float32)
+    # create input-feature-vectors
+    x = combine_features(x, features=features)
     # convert to tensors and copy to device
-    x_train, x_test = torch.from_numpy(x_train), (torch.from_numpy(x_test) if samples_for_testing > 0 else None)
-    y_train, y_test = torch.from_numpy(y_train), (torch.from_numpy(y_test) if samples_for_testing > 0 else None)
-    # transpose
-    x_train, x_test = x_train.transpose(1, 2), (x_test.transpose(1, 2) if samples_for_testing > 0 else None)
-    # return data
-    return x_train, y_train, x_test, y_test
+    x, y = torch.from_numpy(x), torch.from_numpy(y).long()
+    # transpose to match shape (batch, features, points)
+    x = x.transpose(1, 2)
+
+    return x, y
+
+def build_data_seg(pointclouds, n_points, n_samples, features=['points', 'color', 'length']):
+    """ Create Data for segmentation task """
+
+    # build data from given pointclouds
+    x, _ = build_data(pointclouds, n_points, n_samples)
+    # convert to numpy array
+    x = np.array(x, dtype=np.float32)
+    # separate input and class
+    x, y, = x[..., :-1], x[..., -1:]
+    # create input feature vector
+    x = combine_features(x, features=features)
+    # convert to tensors
+    x, y, = torch.from_numpy(x), torch.from_numpy(y).long()
+    # transpose to match shape (batch, features, points)
+    x = x.transpose(1, 2)
+
+    return x, y
 
 
 # *** PREPARE DATA FOR SEGMENTATION ***
 
 # map color to class by index
+# twig - subtwig - rachis - peduncle - berry - hook
 color2class = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (200, 140, 0), (0, 200, 200), (255, 0, 255)]
 
 def get_color_from_nearest(query_points, points, colors):
