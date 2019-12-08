@@ -33,7 +33,7 @@ class_bins = OrderedDict({
     'rachis': ['rachis'],
     'peduncle': ['peduncle'],
     'hook': ['hook'],
-    'None': ['None']
+    # 'None': ['None']
 })
 K = len(class_bins)
 # used features
@@ -51,11 +51,14 @@ segmentater_init_checkpoint = None
 # training parameters
 epochs = 20
 batch_size = 4
+# optimizer parameters
+lr = 5e-4
+weight_decay = 1e-2
 
 # path to files
 fpath = "H:/Pointclouds/Skeleton/Processed"
 # save path
-save_path = "H:/results/segmentation"
+save_path = "H:/results/segmentation_v3"
 os.makedirs(save_path, exist_ok=True)
 
 
@@ -104,7 +107,7 @@ model.load_encoder(encoder_init_checkpoint)
 model.load_segmentater(segmentater_init_checkpoint)
 model.to(device)
 # create optimizer
-optim = optimizer.Adam(model.parameters())
+optim = optimizer.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 
 
 # *** SAVE PARAMETERS ***
@@ -112,17 +115,25 @@ optim = optimizer.Adam(model.parameters())
 with open(os.path.join(save_path, "config.json"), 'w+') as f:
     config = {
         "task": "segmentation",
-        "classes": class_bins,
-        "features": features,
-        "n_points": n_points,
-        "n_samples": n_samples, 
-        "n_test_pointclouds": n_test_pcs,
-        "epochs": epochs,
-        "batch_size": batch_size, 
-        "n_train_samples": len(train_data),
-        "n_train_points": dict(zip(class_bins.keys(), map(int, np.bincount(train_data[:][-1].flatten().numpy())))),
-        "n_test_samples": len(test_data),
-        "n_test_points": dict(zip(class_bins.keys(), map(int, np.bincount(test_data[:][-1].flatten().numpy()))))
+        "data": {
+            "classes": class_bins,
+            "features": features,
+            "n_points": n_points,
+            "n_samples": n_samples, 
+            "n_test_pointclouds": n_test_pcs,
+            "n_train_samples": len(train_data),
+            "n_train_points": dict(zip(class_bins.keys(), map(int, np.bincount(train_data[:][-1].flatten().numpy())))),
+            "n_test_samples": len(test_data),
+            "n_test_points": dict(zip(class_bins.keys(), map(int, np.bincount(test_data[:][-1].flatten().numpy())))),
+        },
+        "training": {
+            "epochs": epochs,
+            "batch_size": batch_size,
+        },
+        "optimizer": {
+            "learning_rate": lr,
+            "weight_decay": weight_decay
+        }
     }
     json.dump(config, f, indent=2, sort_keys=True)
 
@@ -134,7 +145,7 @@ print("TRAINING...")
 tb = TorchBoard("Train_Loss", "Test_Loss", *class_bins.keys())
 tb.add_stat(ConfusionMatrix(class_bins.keys(), name="Confusion", normalize=True))
 
-start = time()
+best_fscore, start = -1, time()
 for epoch in range(epochs):
 
     # train model
@@ -188,7 +199,9 @@ for epoch in range(epochs):
     # save board
     fig = tb.create_fig([[["Train_Loss", "Test_Loss"]], [class_bins.keys()], [["Confusion"]]], figsize=(8, 11))
     fig.savefig(os.path.join(save_path, "board.pdf"), format="pdf")
-    # save model
-    model.save(save_path, prefix="E{0}-".format(epoch))
+    # save model if it improved fscores
+    if sum(f_scores) > best_fscore:
+        model.save(save_path)
+        best_fscore = sum(f_scores)
     # end epoch
     print()

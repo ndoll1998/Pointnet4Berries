@@ -45,6 +45,9 @@ classifier_init_checkpoint = None
 # training parameters
 epochs = 5
 batch_size = 5
+# optimizer parameters
+learning_rate = 5e-4
+weight_decay = 1e-2
 
 # path to files
 fpath = "H:/Pointclouds/Bunch"
@@ -102,17 +105,25 @@ optim = optimizer.Adam(model.parameters())
 with open(os.path.join(save_path, "config.json"), 'w+') as f:
     config = {
         "task": "classification",
-        "classes": classes,
-        "features": features,
-        "n_points": n_points,
-        "n_samples": n_samples, 
-        "n_test_pointclouds": n_test_pcs,
-        "epochs": epochs,
-        "batch_size": batch_size, 
-        "n_train_samples": len(train_data),
-        "n_train_points": dict(zip(classes, map(int, np.bincount(train_data[:][-1].flatten().numpy())))),
-        "n_test_samples": len(test_data),
-        "n_test_points": dict(zip(classes, map(int, np.bincount(test_data[:][-1].flatten().numpy())))),
+        "data": {
+            "classes": classes,
+            "features": features,
+            "n_points": n_points,
+            "n_samples": n_samples, 
+            "n_test_pointclouds": n_test_pcs,
+            "n_train_samples": len(train_data),
+            "n_train_points": dict(zip(classes, map(int, np.bincount(train_data[:][-1].flatten().numpy())))),
+            "n_test_samples": len(test_data),
+            "n_test_points": dict(zip(classes, map(int, np.bincount(test_data[:][-1].flatten().numpy())))),
+        },
+        "training": {
+            "epochs": epochs,
+            "batch_size": batch_size,
+        },
+        "optimizer": {
+            "learning_rate": lr,
+            "weight_decay": weight_decay,
+        }
     }
     json.dump(config, f, indent=2, sort_keys=True)
 
@@ -124,7 +135,7 @@ print("TRAINING...")
 tb = TorchBoard("Train_Loss", "Test_Loss", *classes)
 tb.add_stat(ConfusionMatrix(classes, name="Confusion", normalize=True))
 
-start = time()
+best_fscore, start = -1, time()
 for epoch in range(epochs):
 
     # train model
@@ -178,7 +189,9 @@ for epoch in range(epochs):
     # save board
     fig = tb.create_fig([[["Train_Loss", "Test_Loss"]], [classes], [["Confusion"]]], figsize=(8, 11))
     fig.savefig(os.path.join(save_path, "board.pdf"), format="pdf")
-    # save model
-    model.save(save_path, prefix="E{0}-".format(epoch))
+    # save model if it improved fscores
+    if sum(f_scores) > best_fscore:
+        model.save(save_path)
+        best_fscore = sum(f_scores)
     # end epoch
     print()
