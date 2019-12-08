@@ -112,6 +112,13 @@ def build_data_cls(pointclouds_per_class, n_points, n_samples, features=['points
 def build_data_seg(pointclouds, n_points, n_samples, class_bins=None, features=['points', 'color', 'length']):
     """ Create Data for segmentation task """
 
+    if class_bins is None:
+        # standard class-bins keeping all classes as they are 
+        class_bins = dict(zip(class2color.keys(), class2color.keys()))
+    # remove points of classes not contained in any bin
+    class_ids_of_interest = [list(class2color.keys()).index(n) for bin in class_bins.values() for n in bin]
+    pointclouds = {name: [pc[np.isin(pc[:, -1],class_ids_of_interest)] for pc in pcs] for name, pcs in pointclouds.items()}
+
     # build data from given pointclouds
     x, _ = build_data(pointclouds, n_points, n_samples)
     # convert to numpy array
@@ -119,7 +126,7 @@ def build_data_seg(pointclouds, n_points, n_samples, class_bins=None, features=[
     # separate input and class
     x, y, = x[..., :-1], x[..., -1:]
     # apply bins to y if bins are given
-    y = y if class_bins is None else apply_bins(y, class_bins)
+    y = apply_bins(y, class_bins)
     # create input feature vector
     x = combine_features(x, features=features)
     # convert to tensors
