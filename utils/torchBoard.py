@@ -58,6 +58,10 @@ class ConfusionMatrix(Plotable):
         self.confusion = confusion
         return self
 
+    def __str__(self):
+        # return string of confusion numpy array
+        return str(self.confusion)
+
 
 # *** Statistics ***
 
@@ -113,7 +117,6 @@ class AverageStatistic(Statistic):
 
     def __len__(self):
         return len(self.parent_stat)
-
 
 
 # *** Board ***
