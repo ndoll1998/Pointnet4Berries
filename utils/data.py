@@ -68,7 +68,7 @@ def build_data(pointclouds_per_class, n_points, n_samples):
 
     return x, y
 
-def combine_features(data, features=['points', 'colors', 'length', 'pass_through']):
+def combine_features(data, features=['points', 'colors', 'length-xyz', 'length-xy', 'pass_through']):
     # separate data
     points, colors = data[:, :, 0:3], data[:, :, 3:6]
     # normalize
@@ -82,8 +82,11 @@ def combine_features(data, features=['points', 'colors', 'length', 'pass_through
     if 'colors' in features:
         feats.append(colors)
     # add length feature
-    if 'length' in features:
+    if 'length-xyz' in features:
         feats.append(np.linalg.norm(points, axis=2, keepdims=True))
+    # add 2d-length feature
+    if 'length-xy' in features:
+        feats.append(np.linalg.norm(points[..., :2], axis=2, keepdims=True))
     # add features given in data
     if 'pass_through' in features:
         feats.append(data[:, :, 6:])
@@ -114,7 +117,7 @@ def build_data_seg(pointclouds, n_points, n_samples, class_bins=None, features=[
 
     if class_bins is None:
         # standard class-bins keeping all classes as they are 
-        class_bins = dict(zip(class2color.keys(), class2color.keys()))
+        class_bins = {c: [c] for c in class2color.keys()}
     # remove points of classes not contained in any bin
     class_ids_of_interest = [list(class2color.keys()).index(n) for bin in class_bins.values() for n in bin]
     pointclouds = {name: [pc[np.isin(pc[:, -1],class_ids_of_interest)] for pc in pcs] for name, pcs in pointclouds.items()}
