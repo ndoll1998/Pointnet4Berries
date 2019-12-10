@@ -5,7 +5,7 @@ import torch
 # import NearestNeighbors-Algorithm from sklearn
 from sklearn.neighbors import NearestNeighbors
 # import utils
-from .utils import normalize_pc, voxel_down_sample, estimate_normals
+from .utils import normalize_pc, voxel_down_sample, estimate_normals, rotationMatrix
 
 # import others
 from random import sample
@@ -19,7 +19,7 @@ class2color = OrderedDict({
     'peduncle': (200, 140, 0), 
     'berry':    (0, 200, 200), 
     'hook':     (255, 0, 255),
-    "None":     (0, 0, 0)
+    "None":     (255, 255, 255)
 })
 
 # *** DATA GENERATION HELPERS ***
@@ -180,11 +180,20 @@ def create_segmentation_pointcloud(original_file, segmentation_file, save_file, 
 # *** DATA AUGMENTATION ***
 
 def mirror_pointcloud(original_file, save_file):
-    # read files and mirror x-axis
+    # read file and mirror x-axis
     mirrored = np.loadtxt(original_file).astype(np.float32)
     mirrored[:, 0] *= -1
     # save to file
     np.savetxt(save_file, mirrored)
+
+def rotate_pointcloud(original_file, save_file):
+    # create random rotation matrix
+    rotMatrix = rotationMatrix(*np.random.uniform(0, np.pi, size=3))
+    # read file and rotate pointcloud
+    rotated = np.loadtxt(original_file).astype(np.float32)
+    rotated[:, :3] = rotated[:, :3] @ rotMatrix.T
+    # save to file
+    np.savetxt(save_file, rotated)
 
 
 # *** SCRIPT ***
@@ -228,27 +237,35 @@ if __name__ == '__main__':
                 create_segmentation_pointcloud(orig_file, gt_file, save_file, use_nearest_color=use_nearest_color)
 
     def augment_data_in_path(path):
-        # augment all files in path
+        # # mirror all files in path
+        # for fname in tqdm(os.listdir(path)):
+        #     # create full path to files
+        #     orig_file = os.path.join(path, fname)
+        #     save_file = os.path.join(path, '.'.join(fname.split('.')[:-1]) + '_mirrored.' + fname.split('.')[-1])
+        #     # create mirrored data
+        #     mirror_pointcloud(orig_file, save_file)
+
+        # rotate all files in path
         for fname in tqdm(os.listdir(path)):
             # create full path to files
             orig_file = os.path.join(path, fname)
-            save_file = os.path.join(path, '.'.join(fname.split('.')[:-1]) + '_mirrored.' + fname.split('.')[-1])
-            # create mirrored data
-            mirror_pointcloud(orig_file, save_file)
+            save_file = os.path.join(path, '.'.join(fname.split('.')[:-1]) + '_rotated.' + fname.split('.')[-1])
+            # create rotated data
+            rotate_pointcloud(orig_file, save_file)
 
 
     # base directories
-    dir_bunchs = "C:/Users/Niclas/Documents/Pointclouds/Bunch"
-    dir_skeletons = "C:/Users/Niclas/Documents/Pointclouds/Skeleton"
+    dir_bunchs = "I:/Pointclouds/Bunch"
+    dir_skeletons = "I:/Pointclouds/Skeleton"
 
     print("CREATE DATA:\n")
     # create segmentation data
-    create_segmentation_data_from_path(dir_bunchs, use_nearest_color=False)
-    create_segmentation_data_from_path(dir_skeletons, use_nearest_color=True)
+    # create_segmentation_data_from_path(dir_bunchs, use_nearest_color=False)
+    # create_segmentation_data_from_path(dir_skeletons, use_nearest_color=True)
 
     print("AUGMENT DATA:\n")
     # augment data
-    augment_data_in_path(os.path.join(dir_bunchs, 'Processed'))
+    # augment_data_in_path(os.path.join(dir_bunchs, 'Processed'))
     augment_data_in_path(os.path.join(dir_skeletons, 'Processed'))
 
 

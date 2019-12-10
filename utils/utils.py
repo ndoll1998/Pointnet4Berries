@@ -12,6 +12,28 @@ import os
 import math
 from time import time
 
+""" Helpers """
+
+def rotationMatrix(alpha, betha, gamma) :
+    
+    # create roation matrix for ratation around x-axis
+    R_x = np.array([[1, 0, 0],
+                    [0, math.cos(alpha), -math.sin(alpha)],
+                    [0, math.sin(alpha),  math.cos(alpha)]])
+
+    # create rotation matrix for rotation around y-axis         
+    R_y = np.array([[math.cos(betha), 0, math.sin(betha)],
+                    [0, 1, 0],
+                    [-math.sin(betha), 0, math.cos(betha)]])
+                 
+    # create rotation matrix for rotation around z-axis         
+    R_z = np.array([[math.cos(gamma), -math.sin(gamma), 0],
+                    [math.sin(gamma),  math.cos(gamma), 0],
+                    [0, 0, 1]])
+    
+    # combined rotation matrix
+    return R_z @ R_y @ R_x
+ 
 
 """ Pointcloud Helpers """
 
