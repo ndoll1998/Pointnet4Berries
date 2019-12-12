@@ -14,12 +14,13 @@ import os
 import json
 from collections import OrderedDict
 
+
 # *** SET UP ***
 
 # path to example
-example_fpath = "H:/Pointclouds/Skeleton/Processed/PinotNoir_1.xyzrgbc"
+example_fpath = "I:/Pointclouds/Skeleton/Processed/Dornfelder_1D.feats"
 # path to save folder
-fpath = "H:/results/segmentation_v3"
+fpath = "I:/results/segmentation_v7"
 
 # number of points
 n_points = 100_000
@@ -44,13 +45,8 @@ feature_dim = config['data']['feature_dim']
 
 # load file
 pc = np.loadtxt(example_fpath)
-# get actual color
-all_classes = list(class2color.keys())
-get_color = lambda i: [class2color[bin_name] for bin_name, bin in class_bins.items() if all_classes[int(i)] in bin][0]
-colors = np.apply_along_axis(get_color, axis=-1, arr=pc[:, -1:])
 # prepare data
-x, _ = build_data_seg({'example': [pc]}, n_points, 1, features=features)
-
+x, y = build_data_seg({'example': [pc]}, n_points, 1, class_bins=class_bins, features=features)
 
 # *** LOAD MODEL ***
 
@@ -70,8 +66,9 @@ with torch.no_grad():
     log_probs = model.forward(x).cpu().numpy()
     prediction = np.argmax(log_probs, axis=-1).reshape(-1, 1)
 
-# get colors from prediction
+# get actual and predicted colors
 get_color = lambda i: class2color[classes[int(i)]]
+actual_colors = np.apply_along_axis(get_color, axis=-1, arr=y.reshape(-1, 1))
 pred_colors = np.apply_along_axis(get_color, axis=-1, arr=prediction)
 # get points
 points = x[0, :3, :].T.cpu().numpy()
@@ -83,6 +80,6 @@ points = x[0, :3, :].T.cpu().numpy()
 vis = Visualizer()
 # visualize original pointcloud
 vis.add_by_features(pc[:, :3], pc[:, 3:6] / 255, normalize=True)
-vis.add_by_features(pc[:, :3], colors / 255, normalize=True)
+vis.add_by_features(points, actual_colors / 255, normalize=False)
 vis.add_by_features(points, pred_colors / 255, normalize=False)
 vis.run()
