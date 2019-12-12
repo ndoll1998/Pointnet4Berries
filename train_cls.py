@@ -31,8 +31,8 @@ device = 'cpu'
 classes = ['CB', 'D', 'PN', 'R']
 K = len(classes)
 # used features
-features = ['points', 'colors']
-feature_dim = 3
+features = ['x', 'y', 'z', 'r', 'g', 'b']
+feature_dim = len(features) - 3
 # number of points and samples
 n_points = 1024
 n_samples = 100
@@ -97,7 +97,7 @@ model.load_encoder(encoder_init_checkpoint)
 model.load_classifier(classifier_init_checkpoint)
 model.to(device)
 # create optimizer
-optim = optimizer.Adam(model.parameters())
+optim = optimizer.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay=)
 
 
 # *** SAVE PARAMETERS ***
@@ -108,6 +108,7 @@ with open(os.path.join(save_path, "config.json"), 'w+') as f:
         "data": {
             "classes": classes,
             "features": features,
+            "feature_dim": feature_dim,
             "n_points": n_points,
             "n_samples": n_samples, 
             "n_test_pointclouds": n_test_pcs,
@@ -121,11 +122,11 @@ with open(os.path.join(save_path, "config.json"), 'w+') as f:
             "batch_size": batch_size,
         },
         "optimizer": {
-            "learning_rate": lr,
+            "learning_rate": learning_rate,
             "weight_decay": weight_decay,
         }
     }
-    json.dump(config, f, indent=2, sort_keys=True)
+    json.dump(config, f, indent=2)
 
 
 # *** TRAIN AND TEST MODEL ***
@@ -175,7 +176,7 @@ for epoch in range(epochs):
         y = model.forward(x.to(device))
         running_loss += model.loss(y, y_hat.to(device)).item()
         # update confusion matrix
-        for actual, pred in zip(y_hat.flatten(), torch.argmax(y, dim=-1)):
+        for actual, pred in zip(y_hat.flatten().cpu().numpy(), torch.argmax(y.reshape(-1, K), dim=-1).cpu().numpy()):
             confusion_matrix[actual, pred] += 1
 
     # update board
@@ -189,8 +190,9 @@ for epoch in range(epochs):
     # save board
     fig = tb.create_fig([[["Train_Loss", "Test_Loss"]], [classes], [["Confusion"]]], figsize=(8, 11))
     fig.savefig(os.path.join(save_path, "board.pdf"), format="pdf")
-    # save model if it improved fscores
+    # save model and best board if fscores improved
     if sum(f_scores) > best_fscore:
+        fig.savefig(os.path.join(save_path, "best_board.pdf"), format="pdf")
         model.save(save_path)
         best_fscore = sum(f_scores)
     # end epoch

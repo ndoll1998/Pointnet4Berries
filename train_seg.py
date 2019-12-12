@@ -25,23 +25,23 @@ from collections import OrderedDict
 # *** PARAMS ***
 
 # cuda device
-device = 'cpu'
+device = 'cuda:0'
 
 # number of classes
 class_bins = OrderedDict({
     'twig': ['twig', 'subtwig', 'berry'], 
     'rachis': ['rachis'],
-    'peduncle': ['peduncle'],
-    'hook': ['hook'],
+    # 'peduncle': ['peduncle'],
+    # 'hook': ['hook'],
     # 'None': ['None']
 })
 K = len(class_bins)
 # used features
-features = ['points', 'colors']
-feature_dim = 3
+features = ['x', 'y', 'z', 'curvature']
+feature_dim = len(features) - 3
 # number of points and samples
-n_points = 1024
-n_samples = 40
+n_points = 51_200
+n_samples = 30
 # number of poinclouds per class for testing
 n_test_pcs = 1
 
@@ -49,16 +49,16 @@ n_test_pcs = 1
 encoder_init_checkpoint = None
 segmentater_init_checkpoint = None
 # training parameters
-epochs = 20
-batch_size = 4
+epochs = 1_000
+batch_size = 6
 # optimizer parameters
 lr = 5e-4
 weight_decay = 1e-2
 
 # path to files
-fpath = "H:/Pointclouds/Skeleton/Processed"
+fpath = "I:/Pointclouds/Skeleton/Processed"
 # save path
-save_path = "H:/results/segmentation_v3"
+save_path = "I:/results/segmentation_v7"
 os.makedirs(save_path, exist_ok=True)
 
 
@@ -68,6 +68,11 @@ print("LOADING POINTCLOUDS...")
 pointclouds = {}
 # open files
 for fname in tqdm(os.listdir(fpath)):
+    # ignore rotated pointclouds for now
+    if 'rotated' in fname:
+        continue
+    # if 'mirrored' in fname:
+        # continue
     # get name of pointcloud
     class_name, name = fname.replace('.xyzrgbc', '').split('_')[:2]
     # check for entry in pointclouds
@@ -96,7 +101,7 @@ train_data = TensorDataset(*build_data_seg(train_pointclouds, n_points, n_sample
 test_data = TensorDataset(*build_data_seg(test_pointclouds, n_points, n_samples, class_bins, features=features))
 # create training and testing dataloaders
 train_dataloader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
-test_dataloader = DataLoader(test_data, shuffle=False, batch_size=1000)
+test_dataloader = DataLoader(test_data, shuffle=False, batch_size=1)
 
 
 # *** CREATE MODEL AND OPTIMIZER ***
@@ -118,6 +123,7 @@ with open(os.path.join(save_path, "config.json"), 'w+') as f:
         "data": {
             "classes": class_bins,
             "features": features,
+            "feature_dim": feature_dim,
             "n_points": n_points,
             "n_samples": n_samples, 
             "n_test_pointclouds": n_test_pcs,
@@ -135,7 +141,7 @@ with open(os.path.join(save_path, "config.json"), 'w+') as f:
             "weight_decay": weight_decay
         }
     }
-    json.dump(config, f, indent=2, sort_keys=True)
+    json.dump(config, f, indent=2)
 
 
 # *** TRAIN AND TEST MODEL ***
@@ -185,7 +191,7 @@ for epoch in range(epochs):
         y = model.forward(x.to(device))
         running_loss += model.loss(y, y_hat.to(device)).item()
         # update confusion matrix
-        for actual, pred in zip(y_hat.flatten(), torch.argmax(y.reshape(-1, K), dim=-1)):
+        for actual, pred in zip(y_hat.flatten().cpu().numpy(), torch.argmax(y.reshape(-1, K), dim=-1).cpu().numpy()):
             confusion_matrix[actual, pred] += 1
 
     # update board
@@ -199,8 +205,9 @@ for epoch in range(epochs):
     # save board
     fig = tb.create_fig([[["Train_Loss", "Test_Loss"]], [class_bins.keys()], [["Confusion"]]], figsize=(8, 11))
     fig.savefig(os.path.join(save_path, "board.pdf"), format="pdf")
-    # save model if it improved fscores
+    # save model and best board if fscores improved
     if sum(f_scores) > best_fscore:
+        fig.savefig(os.path.join(save_path, "best_board.pdf"), format="pdf")
         model.save(save_path)
         best_fscore = sum(f_scores)
     # end epoch
