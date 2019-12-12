@@ -5,7 +5,7 @@ import torch
 # import NearestNeighbors-Algorithm from sklearn
 from sklearn.neighbors import NearestNeighbors
 # import utils
-from .utils import normalize_pc, voxel_down_sample, estimate_normals, rotationMatrix
+from .utils import normalize_pc, rotationMatrix, estimate_curvature
 
 # import others
 from random import sample
@@ -21,6 +21,10 @@ class2color = OrderedDict({
     'hook':     (255, 0, 255),
     "None":     (255, 255, 255)
 })
+
+# list of all features
+cls_features = ['x', 'y', 'z', 'r', 'g', 'b', 'length-xy', 'length-xyz']
+seg_features = ['x', 'y', 'z', 'r', 'g', 'b', 'length-xy', 'length-xyz', 'curvature']
 
 # *** DATA GENERATION HELPERS ***
 
@@ -68,41 +72,42 @@ def build_data(pointclouds_per_class, n_points, n_samples):
 
     return x, y
 
-def combine_features(data, features=['points', 'colors', 'length-xyz', 'length-xy', 'pass_through']):
-    # separate data
-    points, colors = data[:, :, 0:3], data[:, :, 3:6]
-    # normalize
-    points, colors = normalize_pc(points, 1, 2), colors / 255    
-    # collect features
-    feats = []
-    # add point features
-    if 'points' in features:
-        feats.append(points)
-    # add color features
-    if 'colors' in features:
-        feats.append(colors)
-    # add length feature
-    if 'length-xyz' in features:
-        feats.append(np.linalg.norm(points, axis=2, keepdims=True))
+def get_feature(data, feature):
+    
+    # features directly from data
+    if feature in ['x', 'y', 'z', 'r', 'g', 'b', 'curvature']:
+        i = ['x', 'y', 'z', 'r', 'g', 'b', 'curvature'].index(feature)
+        return data[:, :, i:i+1]
+
+    # length feature
+    if feature == 'length-xyz':
+        return np.linalg.norm(data[..., :3], axis=2, keepdims=True)
     # add 2d-length feature
-    if 'length-xy' in features:
-        feats.append(np.linalg.norm(points[..., :2], axis=2, keepdims=True))
-    # add features given in data
-    if 'pass_through' in features:
-        feats.append(data[:, :, 6:])
+    if feature == 'length-xy':
+        return np.linalg.norm(data[..., :2], axis=2, keepdims=True)
+    
+def combine_features(data, features):
+    # collect features
+    feats = [get_feature(data, f) for f in features]
     # stack features
     return np.concatenate(feats, axis=2)
 
 
 # *** GENERATE TRAINING / TESTING DATA ***
 
-def build_data_cls(pointclouds_per_class, n_points, n_samples, features=['points', 'color', 'length']):
+def build_data_cls(pointclouds_per_class, n_points, n_samples, features=cls_features):
     """ Create Data for classification task """
+
+    # make sure all requested features are available
+    assert all([f in cls_features for f in features]), "Only features from cls_features are valid"
 
     # build data from given pointclouds
     x, y = build_data(pointclouds_per_class, n_points, n_samples)
     # convert lists to numpy
     x, y = np.array(x, dtype=np.float32), np.array(y, dtype=np.float32)
+    # normalize values
+    x[..., :3] = normalize_pc(x[..., :3], 1, 2) # positions
+    x[..., 3:6] /= 255                          # colors
     # create input-feature-vectors
     x = combine_features(x, features=features)
     # convert to tensors and copy to device
@@ -114,6 +119,9 @@ def build_data_cls(pointclouds_per_class, n_points, n_samples, features=['points
 
 def build_data_seg(pointclouds, n_points, n_samples, class_bins=None, features=['points', 'color', 'length']):
     """ Create Data for segmentation task """
+
+    # make sure all requested features are available
+    assert all([f in seg_features for f in features]), "Only features from seg_features are valid"
 
     if class_bins is None:
         # standard class-bins keeping all classes as they are 
@@ -128,6 +136,10 @@ def build_data_seg(pointclouds, n_points, n_samples, class_bins=None, features=[
     x = np.array(x, dtype=np.float32)
     # separate input and class
     x, y, = x[..., :-1], x[..., -1:]
+    # normalize values
+    x[..., :3] = normalize_pc(x[..., :3], 1, 2) # positions
+    x[..., 3:6] /= 255                          # colors
+    x[..., -1] /= np.abs(x[..., -1]).max()      # curvatures
     # apply bins to y if bins are given
     y = apply_bins(y, class_bins)
     # create input feature vector
@@ -167,6 +179,11 @@ def create_segmentation_pointcloud(original_file, segmentation_file, save_file, 
     else:
         # get color by row
         seg_sematic = segmentation[:, 3:]
+
+    # compute curvature values
+    curvature = estimate_curvature(original[:, :3])
+    stack += (curvature.reshape(-1, 1), )
+
     # map segmentation to class
     get_class = lambda c: color2class.index(tuple(c))
     classes = np.apply_along_axis(get_class, 1, seg_sematic)
@@ -227,7 +244,7 @@ if __name__ == '__main__':
                 # get index name of current pointcloud
                 index = orig.split('_')[1].split('.')[0]
                 # build path to save-file
-                save_file = os.path.join(path, "Processed", sub_dir + f"_{index}.xyzrgbc")
+                save_file = os.path.join(path, "Processed", sub_dir + f"_{index}.feats")
                 
                 # skip if there is no ground thruth for current pointcloud
                 if not os.path.exists(gt_file):
@@ -237,13 +254,13 @@ if __name__ == '__main__':
                 create_segmentation_pointcloud(orig_file, gt_file, save_file, use_nearest_color=use_nearest_color)
 
     def augment_data_in_path(path):
-        # # mirror all files in path
-        # for fname in tqdm(os.listdir(path)):
-        #     # create full path to files
-        #     orig_file = os.path.join(path, fname)
-        #     save_file = os.path.join(path, '.'.join(fname.split('.')[:-1]) + '_mirrored.' + fname.split('.')[-1])
-        #     # create mirrored data
-        #     mirror_pointcloud(orig_file, save_file)
+        # mirror all files in path
+        for fname in tqdm(os.listdir(path)):
+            # create full path to files
+            orig_file = os.path.join(path, fname)
+            save_file = os.path.join(path, '.'.join(fname.split('.')[:-1]) + '_mirrored.' + fname.split('.')[-1])
+            # create mirrored data
+            mirror_pointcloud(orig_file, save_file)
 
         # rotate all files in path
         for fname in tqdm(os.listdir(path)):
@@ -255,13 +272,13 @@ if __name__ == '__main__':
 
 
     # base directories
-    dir_bunchs = "I:/Pointclouds/Bunch"
-    dir_skeletons = "I:/Pointclouds/Skeleton"
+    dir_bunchs = "H:/Pointclouds/Bunch"
+    dir_skeletons = "H:/Pointclouds/Skeleton"
 
     print("CREATE DATA:\n")
     # create segmentation data
     # create_segmentation_data_from_path(dir_bunchs, use_nearest_color=False)
-    # create_segmentation_data_from_path(dir_skeletons, use_nearest_color=True)
+    create_segmentation_data_from_path(dir_skeletons, use_nearest_color=True)
 
     print("AUGMENT DATA:\n")
     # augment data

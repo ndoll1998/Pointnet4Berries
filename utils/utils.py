@@ -4,6 +4,8 @@ import torch
 import numpy as np
 # import matplotlib
 import matplotlib.pyplot as plt
+# import NearestNeighbors-Algorithm from sklearn
+from sklearn.neighbors import NearestNeighbors
 # import open3d to easily manipulate pointclouds
 import open3d
 
@@ -37,41 +39,36 @@ def rotationMatrix(alpha, betha, gamma) :
 
 """ Pointcloud Helpers """
 
-def normalize_pc(pc, reduce_axis=0, feature_axis=1):
+def normalize_pc(points, reduce_axis=0, feature_axis=1):
 
     # check if there are any points in pointcloud
-    if pc.shape[reduce_axis] == 0:
-        return pc
+    if points.shape[reduce_axis] == 0:
+        return points
 
     # transform relative to centroid and resclae
-    pc = pc - np.mean(pc, axis=reduce_axis, keepdims=True)
-    pc = pc / np.max(np.linalg.norm(pc, axis=feature_axis, keepdims=True))
+    points = points - np.mean(points, axis=reduce_axis, keepdims=True)
+    points = points / np.max(np.linalg.norm(points, axis=feature_axis, keepdims=True))
     # return 
-    return pc
+    return points
 
-def voxel_down_sample(points, colors, voxel_size):
-    # create pointcloud object
-    pc = open3d.geometry.PointCloud()
-    pc.points = open3d.utility.Vector3dVector(points)
-    pc.colors = open3d.utility.Vector3dVector(colors)
-    # downsample pointcloud
-    pc_downsample = open3d.open3d.geometry.voxel_down_sample(pc, voxel_size=voxel_size)
-    # create arrays from downsampled pointcoud
-    points_downsamples = np.asarray(pc_downsample.points)
-    colors_downsamples = np.asarray(pc_downsample.colors)
-    # return
-    return points_downsamples, colors_downsamples
+def estimate_curvature(points, n_neighbors=750):
+    # create array to store curvatures in
+    curvatures = np.zeros(points.shape[0])
+    # get nearest neighbors
+    tree = NearestNeighbors(n_neighbors=n_neighbors, algorithm='ball_tree').fit(points)
+    _, nearest_idx = tree.kneighbors(points)
 
-def estimate_normals(points):
-    # create pointcloud object
-    pc = open3d.geometry.PointCloud()
-    pc.points = open3d.utility.Vector3dVector(points[:, :3])
-    # estimate normals and normalize afterwards
-    open3d.open3d.geometry.estimate_normals(pc)
-    # pc.estimate_normals()
-    pc.normalize_normals()
-    # return normals as numpy array
-    return np.asarray(pc.normals)
+    # estimate curvature of each point
+    for i, idx in enumerate(nearest_idx):
+        # compute converiance matrix of nearest neighbors
+        nearest_points = points[idx, :]
+        covariance = np.cov(nearest_points, rowvar=False)
+        # estimate eigenvalues of covariance matrix and 
+        # approximate curvature of current point
+        eigen = np.linalg.eigvals(covariance)
+        curvatures[i] = eigen.min() / eigen.sum()
+
+    return curvatures
 
 
 """ Evaluation Helpers """
