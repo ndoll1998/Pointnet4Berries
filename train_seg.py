@@ -29,15 +29,17 @@ device = 'cuda:0'
 
 # number of classes
 class_bins = OrderedDict({
-    'twig': ['twig', 'subtwig', 'berry'], 
+    'twig': ['twig'],
+    'subtwig': ['subtwig'],
+    'berry': ['berry'],
     'rachis': ['rachis'],
-    # 'peduncle': ['peduncle'],
-    # 'hook': ['hook'],
+    'peduncle': ['peduncle'],
+    'hook': ['hook'],
     # 'None': ['None']
 })
 K = len(class_bins)
 # used features
-features = ['x', 'y', 'z', 'curvature']
+features = ['x', 'y', 'z', 'r', 'g', 'b', 'length-xy', 'curvature']
 feature_dim = len(features) - 3
 # number of points and samples
 n_points = 51_200
@@ -50,7 +52,7 @@ encoder_init_checkpoint = None
 segmentater_init_checkpoint = None
 # training parameters
 epochs = 1_000
-batch_size = 6
+batch_size = 3
 # optimizer parameters
 lr = 5e-4
 weight_decay = 1e-2
@@ -58,7 +60,7 @@ weight_decay = 1e-2
 # path to files
 fpath = "I:/Pointclouds/Skeleton/Processed"
 # save path
-save_path = "I:/results/segmentation_v7"
+save_path = "I:/results/segmentation_all_actual_xy"
 os.makedirs(save_path, exist_ok=True)
 
 
@@ -174,7 +176,7 @@ for epoch in range(epochs):
         optim.step()
 
         # log
-        print("Epoch {0}/{1} - Batch {2}/{3}\t- Average Loss {4:.02f}\t - Time {5:.04f}s"
+        print("Epoch {0}/{1}\t- Batch {2}/{3}\t- Average Loss {4:.02f}\t - Time {5:.04f}s"
             .format(epoch+1, epochs, i+1, len(train_dataloader), running_loss/(i+1), time() - start), end='\r')
 
     # add to statistic

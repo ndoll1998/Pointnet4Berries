@@ -159,7 +159,7 @@ for epoch in range(epochs):
         optim.step()
 
         # log
-        print("Epoch {0}/{1} - Batch {2}/{3}\t- Average Loss {4:.02f}\t - Time {5:.04f}s"
+        print("Epoch {0}/{1}\t- Batch {2}/{3}\t- Average Loss {4:.02f}\t - Time {5:.04f}s"
             .format(epoch+1, epochs, i+1, len(train_dataloader), running_loss/(i+1), time() - start), end='\r')
 
     # add to statistic

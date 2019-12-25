@@ -44,12 +44,23 @@ class Visualizer:
         pc.points = open3d.utility.Vector3dVector(points + np.array([self.n * 1.5, 0, 0]))
         pc.colors = open3d.utility.Vector3dVector(colors)
         # add pointcloud
-        self.vis.add_geometry(pc)
+        self.add_geometry(pc)
         self.n += 1
         # return pointcloud
         return pc
 
-    def run(self):
+    def add_geometry(self, geometry):
+        # add geometry to visualizer
+        self.vis.add_geometry(geometry)
+
+    def run(self, show_coordinate_frame=False):
+
+        # add coordinate frame to view
+        if show_coordinate_frame:
+            mesh_frame = open3d.geometry.TriangleMesh.create_coordinate_frame(
+                size=1, origin=[-1.5, 0, 0])
+            self.add_geometry(mesh_frame)
+
         # run and destroy window afterwards
         self.vis.run()
         self.vis.destroy_window()

@@ -4,8 +4,9 @@ import torch
 import numpy as np
 # import matplotlib
 import matplotlib.pyplot as plt
-# import NearestNeighbors-Algorithm from sklearn
+# import sklearn
 from sklearn.neighbors import NearestNeighbors
+from sklearn.decomposition import PCA
 # import open3d to easily manipulate pointclouds
 import open3d
 
@@ -51,24 +52,35 @@ def normalize_pc(points, reduce_axis=0, feature_axis=1):
     # return 
     return points
 
-def estimate_curvature(points, n_neighbors=750):
+def estimate_principle_components(points, k=1):
+    # create pca
+    pca = PCA(n_components=k).fit(points)
+    # return principle axis
+    return pca.components_
+    
+
+def estimate_curvature_and_normals(points, n_neighbors=750):
     # create array to store curvatures in
     curvatures = np.zeros(points.shape[0])
+    normals = np.zeros_like(points)
     # get nearest neighbors
-    tree = NearestNeighbors(n_neighbors=n_neighbors, algorithm='ball_tree').fit(points)
+    tree = NearestNeighbors(n_neighbors=n_neighbors, algorithm='ball_tree', n_jobs=-1).fit(points)
     _, nearest_idx = tree.kneighbors(points)
+    # delete tree to free memory
+    del tree
 
     # estimate curvature of each point
     for i, idx in enumerate(nearest_idx):
         # compute converiance matrix of nearest neighbors
         nearest_points = points[idx, :]
         covariance = np.cov(nearest_points, rowvar=False)
-        # estimate eigenvalues of covariance matrix and 
-        # approximate curvature of current point
-        eigen = np.linalg.eigvals(covariance)
-        curvatures[i] = eigen.min() / eigen.sum()
+        # estimate eigenvalues of covariance matrix 
+        values, vectors = np.linalg.eig(covariance)
+        # approximate curvature and normal of current point
+        curvatures[i] = values.min() / values.sum()
+        normals[i, :] = vectors[np.argmin(values)]
 
-    return curvatures
+    return curvatures, normals
 
 
 """ Evaluation Helpers """

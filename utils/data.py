@@ -5,7 +5,7 @@ import torch
 # import NearestNeighbors-Algorithm from sklearn
 from sklearn.neighbors import NearestNeighbors
 # import utils
-from .utils import normalize_pc, rotationMatrix, estimate_curvature
+from .utils import normalize_pc, rotationMatrix, estimate_curvature_and_normals
 
 # import others
 from random import sample
@@ -24,7 +24,7 @@ class2color = OrderedDict({
 
 # list of all features
 cls_features = ['x', 'y', 'z', 'r', 'g', 'b', 'length-xy', 'length-xyz']
-seg_features = ['x', 'y', 'z', 'r', 'g', 'b', 'length-xy', 'length-xyz', 'curvature']
+seg_features = ['x', 'y', 'z', 'r', 'g', 'b', 'nx', 'nx', 'nx', 'length-xy', 'length-xyz', 'curvature']
 
 # *** DATA GENERATION HELPERS ***
 
@@ -43,6 +43,9 @@ def get_subsamples(pc, n_points, n_samples):
     """ randomly select an equal amount of points from each class """
     # create subsamples of points equally distributed over all classes
     samples = []
+    # check if asked for full pointcloud
+    if n_points == -1:
+        return [pc]
     # check if pointcloud consists of enough points
     if pc.shape[0] < n_points:
         return samples
@@ -75,8 +78,8 @@ def build_data(pointclouds_per_class, n_points, n_samples):
 def get_feature(data, feature):
     
     # features directly from data
-    if feature in ['x', 'y', 'z', 'r', 'g', 'b', 'curvature']:
-        i = ['x', 'y', 'z', 'r', 'g', 'b', 'curvature'].index(feature)
+    if feature in ['x', 'y', 'z', 'r', 'g', 'b', 'nx', 'nx', 'nx', 'curvature']:
+        i = ['x', 'y', 'z', 'r', 'g', 'b', 'nx', 'nx', 'nx', 'curvature'].index(feature)
         return data[:, :, i:i+1]
 
     # length feature
@@ -84,7 +87,8 @@ def get_feature(data, feature):
         return np.linalg.norm(data[..., :3], axis=2, keepdims=True)
     # add 2d-length feature
     if feature == 'length-xy':
-        return np.linalg.norm(data[..., :2], axis=2, keepdims=True)
+        # TODO: its actually x and z since y shows up in this coordinate system. Use 0th and 2nd column instead!
+        return np.linalg.norm(data[..., (0, 2)], axis=2, keepdims=True)
     
 def combine_features(data, features):
     # collect features
@@ -180,9 +184,9 @@ def create_segmentation_pointcloud(original_file, segmentation_file, save_file, 
         # get color by row
         seg_sematic = segmentation[:, 3:]
 
-    # compute curvature values
-    curvature = estimate_curvature(original[:, :3])
-    stack += (curvature.reshape(-1, 1), )
+    # estimate curvature and normals
+    curvature, normals = estimate_curvature_and_normals(original[:, :3])
+    stack += (normals, curvature.reshape(-1, 1), )
 
     # map segmentation to class
     get_class = lambda c: color2class.index(tuple(c))
@@ -272,8 +276,8 @@ if __name__ == '__main__':
 
 
     # base directories
-    dir_bunchs = "H:/Pointclouds/Bunch"
-    dir_skeletons = "H:/Pointclouds/Skeleton"
+    dir_bunchs = "I:/Pointclouds/Bunch"
+    dir_skeletons = "I:/Pointclouds/Skeleton"
 
     print("CREATE DATA:\n")
     # create segmentation data
