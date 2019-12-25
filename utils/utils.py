@@ -7,8 +7,6 @@ import matplotlib.pyplot as plt
 # import sklearn
 from sklearn.neighbors import NearestNeighbors
 from sklearn.decomposition import PCA
-# import open3d to easily manipulate pointclouds
-import open3d
 
 # import others
 import os
