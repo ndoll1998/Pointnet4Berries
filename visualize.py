@@ -18,12 +18,9 @@ from collections import OrderedDict
 # *** SET UP ***
 
 # path to example
-example_fpath = "I:/Pointclouds/Skeleton/Processed/Dornfelder_1D.feats"
+example_fpath = "H:/Pointclouds/Skeleton/Processed/CalardisBlanc_4E.feats"
 # path to save folder
-fpath = "I:/results/segmentation_v7"
-
-# number of points
-n_points = 100_000
+fpath = "H:/results/segmentation_v2_curvature_bigger_net"
 
 
 # *** LOAD CONFIG ***
@@ -46,7 +43,7 @@ feature_dim = config['data']['feature_dim']
 # load file
 pc = np.loadtxt(example_fpath)
 # prepare data
-x, y = build_data_seg({'example': [pc]}, n_points, 1, class_bins=class_bins, features=features)
+x, y = build_data_seg({'example': [pc]}, -1, 1, class_bins=class_bins, features=features)
 
 # *** LOAD MODEL ***
 
