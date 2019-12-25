@@ -2,7 +2,7 @@
 import torch
 import torch.nn as nn
 # import PointnetPP
-from Pointnet.PointnetPP import PointnetPP_Encoder, PointnetPP_Classification, PointnetPP_Segmentation
+from .PointnetPP import PointnetPP_Encoder, PointnetPP_Classification, PointnetPP_Segmentation
 # import others
 import os
 
@@ -10,8 +10,8 @@ import os
 import torch
 import torch.nn as nn
 # import PointnetPP
-from Pointnet.Pointnet import Pointnet_Encoder, Pointnet_Classification, Pointnet_Segmentation
-from Pointnet.PointnetPP import PointnetPP_Encoder, PointnetPP_Classification, PointnetPP_Segmentation
+from .Pointnet import Pointnet_Encoder, Pointnet_Classification, Pointnet_Segmentation
+from .PointnetPP import PointnetPP_Encoder, PointnetPP_Classification, PointnetPP_Segmentation
 # import others
 import os
 
