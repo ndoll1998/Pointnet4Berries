@@ -63,8 +63,8 @@ class Model_SEG(nn.Module):
         # save number of classes
         self.K = K
         # encoder and segmentater
-        self.encoder = Pointnet_Encoder(dim=3+feat_dim, shared_A=(32,), shared_B=(64,))
-        self.segmentater = Pointnet_Segmentation(k=K, g=64, l=32, shared=(128,))
+        self.encoder = Pointnet_Encoder(dim=3+feat_dim, shared_A=(64,), shared_B=(512,))
+        self.segmentater = Pointnet_Segmentation(k=K, g=512, l=64, shared=(256,))
         # creterion
         self.criterion = nn.NLLLoss()
 
