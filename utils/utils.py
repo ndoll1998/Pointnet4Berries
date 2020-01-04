@@ -50,17 +50,10 @@ def normalize_pc(points, reduce_axis=0, feature_axis=1):
     # return 
     return points
 
-def estimate_principle_components(points, k=1):
-    # create pca
-    pca = PCA(n_components=k).fit(points)
-    # return principle axis
-    return pca.components_
-    
-
 def estimate_curvature_and_normals(points, n_neighbors=750):
-    # create array to store curvatures in
-    curvatures = np.zeros(points.shape[0])
-    normals = np.zeros_like(points)
+    # create arrays to store curvatures and normals in
+    curvatures = np.empty(points.shape[0])
+    normals = np.empty_like(points)
     # get nearest neighbors
     tree = NearestNeighbors(n_neighbors=n_neighbors, algorithm='ball_tree', n_jobs=-1).fit(points)
     _, nearest_idx = tree.kneighbors(points)
@@ -79,6 +72,22 @@ def estimate_curvature_and_normals(points, n_neighbors=750):
         normals[i, :] = vectors[np.argmin(values)]
 
     return curvatures, normals
+
+def align_principle_component(points, b=(0, 1, 0)):
+    # principle component anaylsis
+    pca = PCA(n_components=1).fit(points)
+    a = pca.components_[0:1, :].T
+    a /= np.linalg.norm(a)
+    # priciple component must show away from origin such that the aligned custer/pointcloud is not upside down
+    mean = points.mean(axis=0).reshape(-1, 1)
+    d = mean / np.linalg.norm(mean)
+    # compute angle between principle component and position of pointcloud and inverse direction if needed
+    a *= 1 if (a.T @ d < 0) else -1
+    # create rotation matrix to align principle component to b
+    c = a + np.asarray(b).reshape(-1, 1)
+    R = 2 * (c @ c.T) / (c.T @ c) - np.eye(3)
+    # rotate points
+    return points @ R.T
 
 
 """ Evaluation Helpers """
