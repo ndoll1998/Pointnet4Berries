@@ -14,6 +14,9 @@ def region_growing(points, normals, curvatures, theta_angle=PI/2, theta_curvatur
     # delete nearest neighbor tree to free memory
     del tree
 
+    # copy curvatures to manipulate
+    curvatures = curvatures.copy()
+
     # map each point to a cluster by index
     cluster_mask = np.zeros(points.shape[0])
     cur_cluster_idx = 0

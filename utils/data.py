@@ -16,15 +16,15 @@ class2color = OrderedDict({
     'twig':     (255, 0, 0), 
     'subtwig':  (0, 255, 0), 
     'rachis':   (0, 0, 255), 
-    'peduncle': (200, 140, 0), 
-    'berry':    (0, 200, 200), 
     'hook':     (255, 0, 255),
+    'berry':    (0, 200, 200), 
+    'peduncle': (200, 140, 0), 
     "None":     (255, 255, 255)
 })
 
 # list of all features
 cls_features = ['x', 'y', 'z', 'r', 'g', 'b', 'length-xy', 'length-xyz']
-seg_features = ['x', 'y', 'z', 'r', 'g', 'b', 'nx', 'nx', 'nx', 'length-xy', 'length-xyz', 'curvature']
+seg_features = ['x', 'y', 'z', 'r', 'g', 'b', 'nx', 'nx', 'nx', 'curvature', 'length-xy', 'length-xyz']
 
 # *** DATA GENERATION HELPERS ***
 
@@ -121,18 +121,18 @@ def build_data_cls(pointclouds_per_class, n_points, n_samples, features=cls_feat
 
     return x, y
 
-def build_data_seg(pointclouds, n_points, n_samples, class_bins=None, features=['points', 'color', 'length']):
+def build_data_seg(pointclouds, n_points, n_samples, class_bins=None, features=seg_features):
     """ Create Data for segmentation task """
 
     # make sure all requested features are available
     assert all([f in seg_features for f in features]), "Only features from seg_features are valid"
-
     if class_bins is None:
         # standard class-bins keeping all classes as they are 
         class_bins = {c: [c] for c in class2color.keys()}
     # remove points of classes not contained in any bin
     class_ids_of_interest = [list(class2color.keys()).index(n) for bin in class_bins.values() for n in bin]
-    pointclouds = {name: [pc[np.isin(pc[:, -1],class_ids_of_interest)] for pc in pcs] for name, pcs in pointclouds.items()}
+
+    pointclouds = {name: [pc[np.isin(pc[:, -1], class_ids_of_interest)] for pc in pcs] for name, pcs in pointclouds.items()}
 
     # build data from given pointclouds
     x, _ = build_data(pointclouds, n_points, n_samples)
@@ -141,9 +141,9 @@ def build_data_seg(pointclouds, n_points, n_samples, class_bins=None, features=[
     # separate input and class
     x, y, = x[..., :-1], x[..., -1:]
     # normalize values
-    x[..., :3] = normalize_pc(x[..., :3], 1, 2) # positions
-    x[..., 3:6] /= 255                          # colors
-    x[..., -1] /= np.abs(x[..., -1]).max()      # curvatures
+    x[..., :3] = normalize_pc(x[..., :3], 1, 2)     # positions
+    x[..., 3:6] /= 255                              # colors
+    x[..., -1] /= np.abs(x[..., -1]).max()          # curvatures
     # apply bins to y if bins are given
     y = apply_bins(y, class_bins)
     # create input feature vector
