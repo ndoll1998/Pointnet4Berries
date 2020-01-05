@@ -50,13 +50,28 @@ def normalize_pc(points, reduce_axis=0, feature_axis=1):
     # return 
     return points
 
-def estimate_curvature_and_normals(points, n_neighbors=750):
+def interpolate_pc(points, normals, k=2, span=5e-2):
+    """ generate k random vectors on each plane spanned by a 
+        point and its normal in the pointcloud
+    """
+    # create random vector in plane spanned by normals
+    r = np.random.uniform(-1, 1, size=(points.shape[0] * k, 3))
+    n = np.cross(normals.repeat(k, axis=0), r)
+    n /= np.linalg.norm(n, axis=-1, keepdims=True)
+    # create new points
+    d = np.random.uniform(-span, span, size=n.shape[0])
+    inter_points = points.repeat(k, axis=0) + n * d.reshape(-1, 1)
+    # return points
+    return inter_points
+
+def estimate_curvature_and_normals(points, target_points=None, n_neighbors=750):
+    target_points = points if target_points is None else target_points
     # create arrays to store curvatures and normals in
-    curvatures = np.empty(points.shape[0])
-    normals = np.empty_like(points)
+    curvatures = np.empty(target_points.shape[0])
+    normals = np.empty_like(target_points)
     # get nearest neighbors
     tree = NearestNeighbors(n_neighbors=n_neighbors, algorithm='ball_tree', n_jobs=-1).fit(points)
-    _, nearest_idx = tree.kneighbors(points)
+    _, nearest_idx = tree.kneighbors(target_points, return_distance=False)
     # delete tree to free memory
     del tree
 
@@ -73,7 +88,7 @@ def estimate_curvature_and_normals(points, n_neighbors=750):
 
     return curvatures, normals
 
-def align_principle_component(points, b=(0, 1, 0)):
+def align_principle_component(points, b=(0, -1, 0)):
     # principle component anaylsis
     pca = PCA(n_components=1).fit(points)
     a = pca.components_[0:1, :].T
@@ -82,7 +97,7 @@ def align_principle_component(points, b=(0, 1, 0)):
     mean = points.mean(axis=0).reshape(-1, 1)
     d = mean / np.linalg.norm(mean)
     # compute angle between principle component and position of pointcloud and inverse direction if needed
-    a *= 1 if (a.T @ d < 0) else -1
+    a *= -1 if (a.T @ d < 0) else 1
     # create rotation matrix to align principle component to b
     c = a + np.asarray(b).reshape(-1, 1)
     R = 2 * (c @ c.T) / (c.T @ c) - np.eye(3)
