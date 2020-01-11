@@ -11,7 +11,8 @@ from .utils import normalize_pc, rotationMatrix, estimate_curvature_and_normals,
 from random import sample
 from collections import OrderedDict
 
-# map color to class by index
+# classes and color-map
+classes = ['CB', 'D', 'PN', 'R']
 class2color = OrderedDict({
     'twig':     (255, 0, 0), 
     'subtwig':  (0, 255, 0), 
@@ -32,13 +33,13 @@ seg_features = seg_file_features + ['length-xy', 'length-xyz']
 
 # *** DATA GENERATION HELPERS ***
 
-def apply_bins(x, bins):
+def apply_bins(x, bins, task_classes):
     binned_x = x.copy()
     for i, bin in enumerate(bins.values()):
         # apply bin
         for n in bin:
             # get index of class and apply bin
-            j = list(class2color.keys()).index(n)
+            j = task_classes.index(n)
             binned_x[x == j] = i
     # return 
     return binned_x
@@ -108,8 +109,11 @@ def get_voxel_subsamples(pc, n_points, n_samples):
 
 def build_data(pointclouds_per_class, n_points, n_samples):
 
+    # sort classes to have y match order of classes
+    grouped_pointclouds = [(pointclouds_per_class[c] if c in pointclouds_per_class else []) for c in classes]
+    # build data
     x, y = [], []
-    for i, pcs in enumerate(pointclouds_per_class.values()):
+    for i, pcs in enumerate(grouped_pointclouds):
         # build data
         for pc in pcs:
             # create multiple subclouds from one cloud
@@ -141,11 +145,13 @@ def combine_features(data, features):
 
 # *** GENERATE TRAINING / TESTING DATA ***
 
-def build_data_cls(pointclouds_per_class, n_points, n_samples, features=cls_features, augmentations=None):
+def build_data_cls(pointclouds_per_class, n_points, n_samples, class_bins=None, features=cls_features, augmentations=None):
     """ Create Data for classification task """
 
     # make sure all requested features are available
     assert all([f in cls_features for f in features]), "Only features from cls_features are valid"
+    if class_bins is None:
+        class_bins = OrderedDict({c: [c] for c in classes})
 
     # apply augmentations
     if augmentations is not None:
@@ -157,6 +163,8 @@ def build_data_cls(pointclouds_per_class, n_points, n_samples, features=cls_feat
     # normalize values
     x[..., :3] = normalize_pc(x[..., :3], 1, 2) # positions
     x[..., 3:6] /= 255                          # colors
+    # apply bins to y
+    y = apply_bins(y, class_bins, list(classes.keys()))
     # create input-feature-vectors
     x = combine_features(x, features=features)
     # convert to tensors and copy to device
@@ -173,7 +181,7 @@ def build_data_seg(pointclouds, n_points, n_samples, class_bins=None, features=s
     assert all([f in seg_features for f in features]), "Only features from seg_features are valid"
     if class_bins is None:
         # standard class-bins keeping all classes as they are 
-        class_bins = {c: [c] for c in class2color.keys()}
+        class_bins = OrderedDict({c: [c] for c in class2color.keys()})
     # remove points of classes not contained in any bin
     class_ids_of_interest = [list(class2color.keys()).index(n) for bin in class_bins.values() for n in bin]
     pointclouds = {name: [pc[np.isin(pc[:, -1], class_ids_of_interest)] for pc in pcs] for name, pcs in pointclouds.items()}
@@ -191,8 +199,8 @@ def build_data_seg(pointclouds, n_points, n_samples, class_bins=None, features=s
     x[..., :3] = normalize_pc(x[..., :3], 1, 2)     # positions
     x[..., 3:6] /= 255                              # colors
     x[..., -1] /= np.abs(x[..., -1]).max()          # curvatures
-    # apply bins to y if bins are given
-    y = apply_bins(y, class_bins)
+    # apply bins to y
+    y = apply_bins(y, class_bins, list(class2color.keys()))
     # create input feature vector
     x = combine_features(x, features=features)
     # convert to tensors
