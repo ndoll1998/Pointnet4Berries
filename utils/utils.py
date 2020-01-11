@@ -105,6 +105,43 @@ def align_principle_component(points, b=(0, -1, 0)):
     return points @ R.T
 
 
+""" Voxel Grid Helpers """
+
+def get_points_in_bbox(points, anchorA, anchorB):
+    anchorA, anchorB = np.asarray(anchorA), np.asarray(anchorB)
+    # translate points to both anchors
+    translateA = points - anchorA.reshape(1, -1)
+    translateB = points - anchorB.reshape(1, -1)
+    # check if points are positive linear combination
+    # of the axis spanned by bbox
+    maskA = (translateA @ np.diag(anchorB - anchorA)) >= 0
+    maskB = (translateB @ np.diag(anchorA - anchorB)) >= 0
+    # combined idx
+    return np.where(np.logical_and.reduce(maskA, axis=-1) & np.logical_and.reduce(maskB, axis=-1))[0]
+
+def group_points_by_voxels(points, voxel_grid_size):
+    # get boundings of points
+    max_ = np.max(points, axis=0)
+    min_ = np.min(points, axis=0)
+    # move boundign box anchor to origin
+    bbox = max_ - min_
+    # compute number of voxels in each dimension
+    n_voxels = np.ceil(bbox/voxel_grid_size).astype(np.int32)
+
+    voxels = []
+    # loop over all voxels
+    for index in np.ndindex(*n_voxels):
+        # build anchors of curren voxels
+        anchorA = np.asarray(index) * voxel_grid_size + min_
+        anchorB = anchorA + voxel_grid_size
+        # get points in current voxel
+        points_idx = get_points_in_bbox(points, anchorA, anchorB)
+        if len(points_idx) > 0:
+            voxels.append(points_idx)
+    
+    return voxels
+
+
 """ Evaluation Helpers """
 
 def compute_fscores(confusion_matrix):
