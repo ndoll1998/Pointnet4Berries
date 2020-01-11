@@ -5,7 +5,7 @@ import torch
 # import NearestNeighbors-Algorithm from sklearn
 from sklearn.neighbors import NearestNeighbors
 # import utils
-from .utils import normalize_pc, rotationMatrix, estimate_curvature_and_normals
+from .utils import normalize_pc, rotationMatrix, estimate_curvature_and_normals, group_points_by_voxels
 
 # import others
 from random import sample
@@ -22,9 +22,13 @@ class2color = OrderedDict({
     "None":     (255, 255, 255)
 })
 
+# list of features in files
+cls_file_features = ['x', 'y', 'z', 'r', 'g', 'b']
+seg_file_features = ['x', 'y', 'z', 'r', 'g', 'b', 'nx', 'nx', 'nx', 'curvature']
 # list of all features
-cls_features = ['x', 'y', 'z', 'r', 'g', 'b', 'length-xy', 'length-xyz']
-seg_features = ['x', 'y', 'z', 'r', 'g', 'b', 'nx', 'nx', 'nx', 'curvature', 'length-xy', 'length-xyz']
+cls_features = cls_file_features + ['length-xy', 'length-xyz']
+seg_features = seg_file_features + ['length-xy', 'length-xyz']
+
 
 # *** DATA GENERATION HELPERS ***
 
@@ -38,6 +42,16 @@ def apply_bins(x, bins):
             binned_x[x == j] = i
     # return 
     return binned_x
+
+def apply_augmentations(pointclouds, augmentations):
+    augmented_pointclouds = []
+    # apply all augmentations on all pointclouds
+    for augment in augmentations:
+        augmented_pointclouds.extend(
+            sum([augment.apply(pc) for pc in pointclouds], [])
+        )
+    # return list of all augmented pointclouds
+    return augmented_pointclouds
 
 def get_subsamples(pc, n_points, n_samples):
     """ randomly select an equal amount of points from each class """
@@ -63,6 +77,35 @@ def get_subsamples(pc, n_points, n_samples):
     # return samples
     return samples
 
+def get_voxel_subsamples(pc, n_points, n_samples):
+    """ select random points from each voxel """
+    # check if asked for full pointcloud
+    if n_points == -1:
+        return [pc]
+    # check if pointcloud consists of enough points
+    if pc.shape[0] < n_points:
+        return []
+    # get points
+    points, n = normalize_pc(pc[:, :3]), pc.shape[0]
+    # build voxels
+    voxel_points = group_points_by_voxels(points, voxel_grid_size=0.1)
+    # get the number of points selected from each voxel
+    weights = np.asarray([len(voxel)/n for voxel in voxel_points])
+    points_per_voxel = np.ceil(weights * n_points).astype(np.int32)
+    # create samples
+    sample_idx = []
+    for _ in range(n_samples):
+        # select random points from each voxel and add to list
+        idx = sum([sample(list(v), n) for v, n in zip(voxel_points, points_per_voxel)], [])
+        sample_idx.append(idx)
+
+    # select random points from and build samples from indices
+    sample_idx = [sample(idx, n_points) for idx in sample_idx]
+    samples = [pc[idx, :] for idx in sample_idx]
+
+    # return samples
+    return samples
+
 def build_data(pointclouds_per_class, n_points, n_samples):
 
     x, y = [], []
@@ -70,7 +113,7 @@ def build_data(pointclouds_per_class, n_points, n_samples):
         # build data
         for pc in pcs:
             # create multiple subclouds from one cloud
-            x += get_subsamples(pc, n_points, n_samples)
+            x += get_voxel_subsamples(pc, n_points, n_samples)
             y += [i] * n_samples
 
     return x, y
@@ -87,7 +130,6 @@ def get_feature(data, feature):
         return np.linalg.norm(data[..., :3], axis=2, keepdims=True)
     # add 2d-length feature
     if feature == 'length-xy':
-        # TODO: its actually x and z since y shows up in this coordinate system. Use 0th and 2nd column instead!
         return np.linalg.norm(data[..., (0, 2)], axis=2, keepdims=True)
     
 def combine_features(data, features):
@@ -99,12 +141,15 @@ def combine_features(data, features):
 
 # *** GENERATE TRAINING / TESTING DATA ***
 
-def build_data_cls(pointclouds_per_class, n_points, n_samples, features=cls_features):
+def build_data_cls(pointclouds_per_class, n_points, n_samples, features=cls_features, augmentations=None):
     """ Create Data for classification task """
 
     # make sure all requested features are available
     assert all([f in cls_features for f in features]), "Only features from cls_features are valid"
 
+    # apply augmentations
+    if augmentations is not None:
+        pointclouds_per_class = {key: pcs + apply_augmentations(pcs, augmentations) for key, pcs in pointclouds_per_class.items()}
     # build data from given pointclouds
     x, y = build_data(pointclouds_per_class, n_points, n_samples)
     # convert lists to numpy
@@ -121,7 +166,7 @@ def build_data_cls(pointclouds_per_class, n_points, n_samples, features=cls_feat
 
     return x, y
 
-def build_data_seg(pointclouds, n_points, n_samples, class_bins=None, features=seg_features):
+def build_data_seg(pointclouds, n_points, n_samples, class_bins=None, features=seg_features, augmentations=None):
     """ Create Data for segmentation task """
 
     # make sure all requested features are available
@@ -131,8 +176,10 @@ def build_data_seg(pointclouds, n_points, n_samples, class_bins=None, features=s
         class_bins = {c: [c] for c in class2color.keys()}
     # remove points of classes not contained in any bin
     class_ids_of_interest = [list(class2color.keys()).index(n) for bin in class_bins.values() for n in bin]
-
     pointclouds = {name: [pc[np.isin(pc[:, -1], class_ids_of_interest)] for pc in pcs] for name, pcs in pointclouds.items()}
+    # apply augmentations
+    if augmentations is not None:
+        pointclouds_per_class = {key: pcs + apply_augmentations(pcs, augmentations) for key, pcs in pointclouds.items()}
 
     # build data from given pointclouds
     x, _ = build_data(pointclouds, n_points, n_samples)
@@ -156,7 +203,7 @@ def build_data_seg(pointclouds, n_points, n_samples, class_bins=None, features=s
     return x, y
 
 
-# *** PREPARE DATA FOR SEGMENTATION ***
+# *** BUILD TRAINING FILES ***
 
 def get_color_from_nearest(query_points, points, colors):
     # build tree
@@ -196,25 +243,6 @@ def create_segmentation_pointcloud(original_file, segmentation_file, save_file, 
     # stack segmentation to array and sace
     combined = np.hstack(stack)
     np.savetxt(save_file, combined)
-
-
-# *** DATA AUGMENTATION ***
-
-def mirror_pointcloud(original_file, save_file):
-    # read file and mirror x-axis
-    mirrored = np.loadtxt(original_file).astype(np.float32)
-    mirrored[:, 0] *= -1
-    # save to file
-    np.savetxt(save_file, mirrored)
-
-def rotate_pointcloud(original_file, save_file):
-    # create random rotation matrix
-    rotMatrix = rotationMatrix(*np.random.uniform(0, np.pi, size=3))
-    # read file and rotate pointcloud
-    rotated = np.loadtxt(original_file).astype(np.float32)
-    rotated[:, :3] = rotated[:, :3] @ rotMatrix.T
-    # save to file
-    np.savetxt(save_file, rotated)
 
 
 # *** SCRIPT ***
@@ -257,24 +285,6 @@ if __name__ == '__main__':
                 # create pointcloud
                 create_segmentation_pointcloud(orig_file, gt_file, save_file, use_nearest_color=use_nearest_color)
 
-    def augment_data_in_path(path):
-        # mirror all files in path
-        for fname in tqdm(os.listdir(path)):
-            # create full path to files
-            orig_file = os.path.join(path, fname)
-            save_file = os.path.join(path, '.'.join(fname.split('.')[:-1]) + '_mirrored.' + fname.split('.')[-1])
-            # create mirrored data
-            mirror_pointcloud(orig_file, save_file)
-
-        # rotate all files in path
-        for fname in tqdm(os.listdir(path)):
-            # create full path to files
-            orig_file = os.path.join(path, fname)
-            save_file = os.path.join(path, '.'.join(fname.split('.')[:-1]) + '_rotated.' + fname.split('.')[-1])
-            # create rotated data
-            rotate_pointcloud(orig_file, save_file)
-
-
     # base directories
     dir_bunchs = "I:/Pointclouds/Bunch"
     dir_skeletons = "I:/Pointclouds/Skeleton"
@@ -283,10 +293,4 @@ if __name__ == '__main__':
     # create segmentation data
     # create_segmentation_data_from_path(dir_bunchs, use_nearest_color=False)
     create_segmentation_data_from_path(dir_skeletons, use_nearest_color=True)
-
-    print("AUGMENT DATA:\n")
-    # augment data
-    # augment_data_in_path(os.path.join(dir_bunchs, 'Processed'))
-    augment_data_in_path(os.path.join(dir_skeletons, 'Processed'))
-
 
