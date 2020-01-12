@@ -115,7 +115,7 @@ def build_data(pointclouds_per_class, n_points, n_samples):
     x, y = [], []
     for i, pcs in enumerate(grouped_pointclouds):
         # build data
-        for pc in pcs:
+        for pc in tqdm(pcs, desc=classes[i]):
             # create multiple subclouds from one cloud
             x += get_voxel_subsamples(pc, n_points, n_samples)
             y += [i] * n_samples
@@ -164,7 +164,7 @@ def build_data_cls(pointclouds_per_class, n_points, n_samples, class_bins=None, 
     x[..., :3] = normalize_pc(x[..., :3], 1, 2) # positions
     x[..., 3:6] /= 255                          # colors
     # apply bins to y
-    y = apply_bins(y, class_bins, list(classes.keys()))
+    y = apply_bins(y, class_bins, list(classes))
     # create input-feature-vectors
     x = combine_features(x, features=features)
     # convert to tensors and copy to device
@@ -245,8 +245,8 @@ def create_segmentation_pointcloud(original_file, segmentation_file, save_file, 
 
     # map segmentation to class
     get_class = lambda c: color2class.index(tuple(c))
-    classes = np.apply_along_axis(get_class, 1, seg_sematic)
-    stack += (classes.reshape(-1, 1), )
+    classes_ = np.apply_along_axis(get_class, 1, seg_sematic)
+    stack += (classes_.reshape(-1, 1), )
 
     # stack segmentation to array and sace
     combined = np.hstack(stack)
