@@ -8,6 +8,7 @@ from sklearn.neighbors import NearestNeighbors
 from .utils import normalize_pc, rotationMatrix, estimate_curvature_and_normals, group_points_by_voxels
 
 # import others
+from tqdm import tqdm
 from random import sample
 from collections import OrderedDict
 
@@ -89,7 +90,7 @@ def get_voxel_subsamples(pc, n_points, n_samples):
     # get points
     points, n = normalize_pc(pc[:, :3]), pc.shape[0]
     # build voxels
-    voxel_points = group_points_by_voxels(points, voxel_grid_size=0.1)
+    voxel_points = group_points_by_voxels(points, voxel_grid_size=0.2)
     # get the number of points selected from each voxel
     weights = np.asarray([len(voxel)/n for voxel in voxel_points])
     points_per_voxel = np.ceil(weights * n_points).astype(np.int32)
