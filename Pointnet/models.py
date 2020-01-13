@@ -1,6 +1,7 @@
 # improt pytorch-framework
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 # import PointnetPP
 from .PointnetPP import PointnetPP_Encoder, PointnetPP_Classification, PointnetPP_Segmentation
 # import others
@@ -32,9 +33,9 @@ class Model_CLS(nn.Module):
         # encode and classify
         return self.classifier(self.encoder(x))
 
-    def loss(self, y, y_hat):
+    def loss(self, y, y_hat, **kwargs):
         # compute loss
-        return self.criterion(y, y_hat)
+        return F.nll_loss(y, y_hat, **kwargs)
 
     def save(self, file_path, prefix=""):
         # save encoder and classifier separatly
@@ -65,16 +66,14 @@ class Model_SEG(nn.Module):
         # encoder and segmentater
         self.encoder = Pointnet_Encoder(dim=3+feat_dim, shared_A=(64,), shared_B=(512,))
         self.segmentater = Pointnet_Segmentation(k=K, g=512, l=64, shared=(256,))
-        # creterion
-        self.criterion = nn.NLLLoss()
 
     def forward(self, x):
         # encode and classify
         return self.segmentater(self.encoder(x))
 
-    def loss(self, y, y_hat):
+    def loss(self, y, y_hat, **kwargs):
         # compute loss
-        return self.criterion(y.reshape(-1, self.K), y_hat.flatten())
+        return F.nll_loss(y.reshape(-1, self.K), y_hat.flatten(), **kwargs)
 
     def save(self, file_path, prefix=""):
         # save encoder and segmentater separatly
