@@ -188,7 +188,7 @@ def build_data_seg(pointclouds, n_points, n_samples, class_bins=None, features=s
     pointclouds = {name: [pc[np.isin(pc[:, -1], class_ids_of_interest)] for pc in pcs] for name, pcs in pointclouds.items()}
     # apply augmentations
     if augmentations is not None:
-        pointclouds_per_class = {key: pcs + apply_augmentations(pcs, augmentations) for key, pcs in pointclouds.items()}
+        pointclouds = {key: pcs + apply_augmentations(pcs, augmentations) for key, pcs in pointclouds.items()}
 
     # build data from given pointclouds
     x, _ = build_data(pointclouds, n_points, n_samples)
