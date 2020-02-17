@@ -6,9 +6,10 @@ from sklearn.neighbors import NearestNeighbors
 from torch.utils.data import TensorDataset, DataLoader
 # import model and utils
 from Pointnet.models import Model_SEG
-from utils.data import build_data_seg, class2color
+from utils.data import build_data_seg, class2color, seg_file_features
 from utils.utils import compute_fscores, normalize_pc, align_principle_component, interpolate_pc
 from utils.clustering import region_growing
+from utils.augmentation import Augmenter, augment_rotate_pointcloud
 from utils.torchBoard import TorchBoard, ConfusionMatrix
 # import others
 import os
@@ -36,9 +37,16 @@ hierarchical_class_bins = [
         'twig:final': ['twig']
     })
 ]; K = len(hierarchical_class_bins[0])
+# augmentations
+augmentations = [
+    Augmenter(augment_rotate_pointcloud, feats=seg_file_features, apply_count=10, rot_axis='xyz')
+]
 # used features
 features = ['x', 'y', 'z', 'r', 'g', 'b', 'length-xy', 'curvature']
 feature_dim = len(features) - 3
+# data preparation
+align_pointclouds = False
+interpolate_pointclouds = True
 # number of points and samples
 n_points = 35_000
 n_samples = 10
@@ -54,9 +62,9 @@ batch_size = 4
 lr = 5e-4
 weight_decay = 1e-2
 # path to files
-fpath = "C:/Users/Nicla/Google Drive/P4B/Pointclouds"
+fpath = "data/"
 # save path
-save_path = "C:/Users/Nicla/Google Drive/P4B/results/hierarchicalSegmentation_interpolated_v1"
+save_path = "results/hierarchical"
 os.makedirs(save_path, exist_ok=True)
 
 
@@ -65,8 +73,6 @@ os.makedirs(save_path, exist_ok=True)
 pointclouds = {}
 # open files
 for fname in tqdm(os.listdir(fpath)):
-    if 'mirrored' in fname:
-        continue
     # get name of pointcloud
     class_name, name = fname.replace('.xyzrgbc', '').split('_')[:2]
     # check for entry in pointclouds
@@ -93,10 +99,11 @@ for class_name, pcs in pointclouds.items():
 # *** PREPATE TRAINING AND EVALUATION DATA ***
 
 def preprocess(pc):
-    # align pointcloud
-    pc[:, :3] = align_principle_component(pc[:, :3])
+    if align_pointclouds:
+        # align pointcloud
+        pc[:, :3] = align_principle_component(pc[:, :3])
 
-    if pc.shape[0] < n_points:
+    if (pc.shape[0] < n_points) and interpolate_pointclouds:
         # interpolate pointcloud
         k = ceil(n_points/pc.shape[0] - 1)
         points = interpolate_pc(pc[:, :3], pc[:, 6:9], k=k)
@@ -121,7 +128,7 @@ def build_data(pointclouds):
     data = tuple()
     # build first hierarchy data
     class_bins = hierarchical_class_bins[0]
-    data += (build_data_seg(pointclouds, n_points, n_samples, make_class_bins(class_bins), features=features),)
+    data += (build_data_seg(pointclouds, n_points, n_samples, make_class_bins(class_bins), features=features, augmentations=augmentations))
 
     # build data for following hierarchies
     for class_bins in hierarchical_class_bins[1:]:
@@ -147,7 +154,7 @@ def build_data(pointclouds):
         # update pointclouds
         pointclouds = next_pointclouds
         # build data from pointclouds
-        data += (build_data_seg(pointclouds, n_points, n_samples//3, make_class_bins(class_bins), features=features),)
+        data += (build_data_seg(pointclouds, n_points, n_samples//3, make_class_bins(class_bins), features=features, augmentations=augmentations))
     # concatenate data
     return tuple(torch.cat(values, dim=0) for values in zip(*data))
 
@@ -174,6 +181,11 @@ optim = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 # build config
 config = {
     "task": "hierarchical_segmentation",
+    "augmentation": [augment.dict() for augment in augmentations],
+    "preparation": {
+        "align_pointclouds": align_pointclouds,
+        "interpolate_pointclouds": interpolate_pointclouds
+    },
     "data": {
         "hierarchy_classes": hierarchical_class_bins,
         "features": features,
