@@ -12,8 +12,7 @@ from tqdm import tqdm
 from random import sample
 from collections import OrderedDict
 
-# classes and color-map
-classes = ['CB', 'D', 'PN', 'R']
+# segmentation color-map
 class2color = OrderedDict({
     'twig':     (255, 0, 0), 
     'subtwig':  (0, 255, 0), 
@@ -108,15 +107,21 @@ def get_voxel_subsamples(pc, n_points, n_samples):
     # return samples
     return samples
 
-def build_data(pointclouds_per_class, n_points, n_samples):
+def build_data(pointclouds_per_class, n_points, n_samples, classes=None):
 
-    # sort classes to have y match order of classes
-    grouped_pointclouds = [(pointclouds_per_class[c] if c in pointclouds_per_class else []) for c in classes]
+    if classes is not None:
+        # sort classes such that target y matches the order of classes
+        grouped_pointclouds = [(pointclouds_per_class[c] if c in pointclouds_per_class else []) for c in classes]
+    else:
+        # group all pointclouds in a single class - usually applies for segmenation task
+        classes = ['pc']
+        grouped_pointclouds = [sum(pointclouds_per_class.values(), [])]
+
     # build data
     x, y = [], []
     for i, pcs in enumerate(grouped_pointclouds):
         # build data
-        for pc in tqdm(pcs, desc=classes[i]):
+        for pc in tqdm(pcs, desc=str(classes[i])):
             # create multiple subclouds from one cloud
             x += get_voxel_subsamples(pc, n_points, n_samples)
             y += [i] * n_samples
@@ -151,14 +156,17 @@ def build_data_cls(pointclouds_per_class, n_points, n_samples, class_bins=None, 
 
     # make sure all requested features are available
     assert all([f in cls_features for f in features]), "Only features from cls_features are valid"
+    # get all classes
+    classes = list(pointclouds_per_class.keys())
     if class_bins is None:
+        # standard class bins
         class_bins = OrderedDict({c: [c] for c in classes})
 
     # apply augmentations
     if augmentations is not None:
         pointclouds_per_class = {key: pcs + apply_augmentations(pcs, augmentations) for key, pcs in pointclouds_per_class.items()}
     # build data from given pointclouds
-    x, y = build_data(pointclouds_per_class, n_points, n_samples)
+    x, y = build_data(pointclouds_per_class, n_points, n_samples, classes=classes)
     # convert lists to numpy
     x, y = np.array(x, dtype=np.float32), np.array(y, dtype=np.float32)
     # normalize values
