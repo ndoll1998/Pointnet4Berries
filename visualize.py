@@ -67,7 +67,7 @@ class SegmentationVisualizer(Visualizer):
         self.n += 1
 
 
-class HierarchivalSegmentationVisualizer(Visualizer):
+class HierarchicalSegmentationVisualizer(Visualizer):
 
     def __init__(self, config, model_path):
         # initialize visualizer
@@ -179,7 +179,7 @@ class HierarchivalSegmentationVisualizer(Visualizer):
 # map task-names to visualizers
 taskVisualizers = {
     "segmentation": SegmentationVisualizer,
-    "hierarchical_segmentation": HierarchivalSegmentationVisualizer,
+    "hierarchical_segmentation": HierarchicalSegmentationVisualizer,
 }
 
 if __name__ == '__main__':
