@@ -11,6 +11,7 @@ from sklearn.decomposition import PCA
 # import others
 import os
 import math
+import itertools
 from time import time
 
 """ Helpers """
@@ -119,7 +120,7 @@ def get_points_in_bbox(points, anchorA, anchorB):
     # combined idx
     return np.where(np.logical_and.reduce(maskA, axis=-1) & np.logical_and.reduce(maskB, axis=-1))[0]
 
-def group_points_by_voxels(points, voxel_grid_size):
+def group_points_by_grid(points, voxel_grid_size):
     # get boundings of points
     max_ = np.max(points, axis=0)
     min_ = np.min(points, axis=0)
@@ -141,6 +142,43 @@ def group_points_by_voxels(points, voxel_grid_size):
     
     return voxels
 
+def get_all_anchors(anchorA, anchorB):
+    # get dimension
+    dim = len(anchorA)
+    # build anchors
+    anchor_coord_idx = itertools.product([0, 1], repeat=dim)
+    anchors = [tuple((anchorA[i], anchorB[i])[j] for i, j in enumerate(idx)) for idx in anchor_coord_idx]
+    return anchors
+
+def group_points_by_octree(points, min_points):
+    
+    def build_subtree_(points):
+        # get bounding box
+        bbox_min = np.min(points, axis=0)
+        bbox_max = np.max(points, axis=0)
+        # get center point - using mean instead of center of bbox
+        center = tuple(np.mean(points, axis=0))
+        # build all anchor-points
+        anchors = get_all_anchors(bbox_min, bbox_max)
+        # group points
+        return [get_points_in_bbox(points, anchor, center) for anchor in anchors]
+
+    k = 0
+    # voxels of first hierarchy
+    voxels = build_subtree_(points)
+    # loop over all voxels
+    while k < len(voxels):
+        voxel = voxels.pop(k)
+        # check trivial case
+        if len(voxel) > min_points:
+            # build subtree
+            voxels += [voxel[idx] for idx in build_subtree_(points[voxel])]
+        else:
+            # add voxel back in and go on with next voxel
+            voxels.insert(k, voxel)
+            k += 1
+
+    return voxels
 
 """ Evaluation Helpers """
 
