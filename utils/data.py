@@ -5,7 +5,10 @@ import torch
 # import NearestNeighbors-Algorithm from sklearn
 from sklearn.neighbors import NearestNeighbors
 # import utils
-from .utils import normalize_pc, rotationMatrix, estimate_curvature_and_normals, group_points_by_grid, group_points_by_octree
+if __name__ == '__main__':
+    from utils import normalize_pc, rotationMatrix, estimate_curvature_and_normals, group_points_by_grid, group_points_by_octree
+else:
+    from .utils import normalize_pc, rotationMatrix, estimate_curvature_and_normals, group_points_by_grid, group_points_by_octree
 
 # import others
 from tqdm import tqdm
@@ -17,9 +20,9 @@ class2color = OrderedDict({
     'twig':     (255, 0, 0), 
     'subtwig':  (0, 255, 0), 
     'rachis':   (0, 0, 255), 
-    'hook':     (255, 0, 255),
+    'hook':     (200, 140, 0),
     'berry':    (0, 200, 200), 
-    'peduncle': (200, 140, 0), 
+    'peduncle': (255, 0, 255), 
     "None":     (255, 255, 255)
 })
 
