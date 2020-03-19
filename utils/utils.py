@@ -166,7 +166,7 @@ def group_points_by_octree(points, min_points):
 
     k = 0
     # voxels of first hierarchy
-    voxels = [list(range(points.shape[0]))]
+    voxels = [np.array(range(points.shape[0]))]
     # loop over all voxels
     while k < len(voxels):
         voxel = voxels.pop(k)
