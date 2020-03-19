@@ -151,6 +151,7 @@ def get_all_anchors(anchorA, anchorB):
     return anchors
 
 def group_points_by_octree(points, min_points):
+
     
     def build_subtree_(points):
         # get bounding box
@@ -165,7 +166,7 @@ def group_points_by_octree(points, min_points):
 
     k = 0
     # voxels of first hierarchy
-    voxels = build_subtree_(points)
+    voxels = [list(range(points.shape[0]))]
     # loop over all voxels
     while k < len(voxels):
         voxel = voxels.pop(k)
