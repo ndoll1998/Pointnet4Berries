@@ -101,7 +101,7 @@ def get_voxel_subsamples(pc, n_points, n_samples):
     sample_idx = []
     for _ in range(n_samples):
         # select random points from each voxel and add to list
-        idx = sum([sample(list(v), n) for v, n in zip(voxel_points, points_per_voxel)], [])
+        idx = sum([sample(list(v), min(n, len(v))) for v, n in zip(voxel_points, points_per_voxel)], [])
         sample_idx.append(idx)
 
     # select random points from and build samples from indices
