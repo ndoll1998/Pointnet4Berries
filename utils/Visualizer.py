@@ -10,12 +10,12 @@ from .utils import normalize_pc
 
 class Visualizer:
 
-    def __init__(self):
+    def __init__(self, background_color=(0, 0, 0)):
         # create visualizer and window
         self.vis = open3d.visualization.Visualizer()
         self.window = self.vis.create_window()
         # set rendering options
-        self.vis.get_render_option().background_color = np.array([0, 0, 0])
+        self.vis.get_render_option().background_color = np.array(background_color)
         self.vis.get_render_option().point_size = 0.2
         # number of geometries
         self.n = 0
