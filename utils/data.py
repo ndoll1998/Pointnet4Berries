@@ -111,6 +111,30 @@ def get_voxel_subsamples(pc, n_points, n_samples):
     # return samples
     return samples
 
+def get_voxel_subsamples_equal_class_distribution(pc, n_points, n_samples):
+    # split pointcloud in classes
+    pc_per_class = [pc[pc[:,-1] == i] for i in np.unique(pc[:, -1])]
+    # get number of points to sample from each class
+    points_per_class = np.array([n_points // len(pc_per_class)] * len(pc_per_class))
+    # handle sample larger than population
+    overflow = np.array([max(0, n - pc_c.shape[0]) for pc_c, n in zip(pc_per_class, points_per_class)])    
+    addition = np.zeros_like(points_per_class).astype(int)
+    addition[overflow == 0] += overflow.sum() // (overflow == 0).sum()
+    points_per_class = points_per_class - overflow + addition
+    # sample from all classes and combine pointclouds
+    sampled = [get_voxel_subsamples(pc_c, n, n_samples) for pc_c, n in zip(pc_per_class, points_per_class)]
+    sampled = [np.concatenate(pcs, axis=0) for pcs in zip(*sampled)]
+
+    # handle size missmatches due to rounding errors
+    if sampled[0].shape[0] < n_points:
+        # select random points and add to pointcloud
+        n = n_points - sampled[0].shape[0]
+        return [np.concatenate(
+            (pc_, pc[sample(range(pc.shape[0]), n), :]), axis=0
+        ) for pc_ in sampled]
+
+    return sampled
+
 def build_data(pointclouds_per_class, n_points, n_samples, classes=None):
 
     if classes is not None:
@@ -127,7 +151,7 @@ def build_data(pointclouds_per_class, n_points, n_samples, classes=None):
         # build data
         for pc in tqdm(pcs, desc=str(classes[i])):
             # create multiple subclouds from one cloud
-            x += get_voxel_subsamples(pc, n_points, n_samples)
+            x += get_voxel_subsamples_equal_class_distribution(pc, n_points, n_samples)
             y += [i] * n_samples
 
     return x, y
