@@ -72,7 +72,7 @@ def estimate_curvature_and_normals(points, target_points=None, n_neighbors=750):
     normals = np.empty_like(target_points)
     # get nearest neighbors
     tree = NearestNeighbors(n_neighbors=n_neighbors, algorithm='ball_tree', n_jobs=-1).fit(points)
-    _, nearest_idx = tree.kneighbors(target_points, return_distance=False)
+    nearest_idx = tree.kneighbors(target_points, return_distance=False)
     # delete tree to free memory
     del tree
 

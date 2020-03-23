@@ -151,7 +151,7 @@ def build_data(pointclouds_per_class, n_points, n_samples, classes=None):
         # build data
         for pc in tqdm(pcs, desc=str(classes[i])):
             # create multiple subclouds from one cloud
-            x += get_voxel_subsamples_equal_class_distribution(pc, n_points, n_samples)
+            x += get_voxel_subsamples(pc, n_points, n_samples)
             y += [i] * n_samples
 
     return x, y
