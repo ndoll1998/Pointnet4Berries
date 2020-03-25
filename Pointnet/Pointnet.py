@@ -41,7 +41,7 @@ class TNet(nn.Module):
         y = self.linear(y).view(-1, self.dim, self.dim)
 
         # compute panelty
-        panelty = torch.norm(torch.eye(self.dim) - y)
+        panelty = torch.norm(torch.eye(self.dim).to(y.device) - y)
         # apply transform matrix to given points
         x = x.transpose(1, 2) @ y
 
