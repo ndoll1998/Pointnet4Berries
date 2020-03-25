@@ -39,12 +39,14 @@ class TNet(nn.Module):
         y = self.dropout(y)
         # convert to translation matrix
         y = self.linear(y).view(-1, self.dim, self.dim)
-        # add identity
-        y += torch.eye(self.dim).to(y.device)
 
+        # compute panelty
+        panelty = torch.norm(torch.eye(self.dim) - y)
         # apply transform matrix to given points
         x = x.transpose(1, 2) @ y
-        return x.transpose(1, 2)
+
+        # return transformed input and panelty
+        return x.transpose(1, 2), panelty
 
 
 # *** POINTNET ***
@@ -62,22 +64,31 @@ class Pointnet_Encoder(nn.Module):
         # batchnorm layers
         self.batchnorms_A = nn.ModuleList([nn.BatchNorm1d(n) for n in shared_A])
         self.batchnorms_B = nn.ModuleList([nn.BatchNorm1d(n) for n in shared_B])
+        # current panelty
+        self.panelty_ = 0
 
     def forward(self, x):
         out_A = x
         # apply first transformation and shared mlp
-        out_A = self.tnet_A.forward(out_A)
+        out_A, panelty_A = self.tnet_A.forward(out_A)
         for conv, bn in zip(self.convs_A, self.batchnorms_A):
             out_A = F.relu(bn(conv(out_A)))
         # apply second transformation and shared mlp
-        out_B = self.tnet_B(out_A)
+        out_B, panelty_B = self.tnet_B(out_A)
         for conv, bn in zip(self.convs_B, self.batchnorms_B):
             out_B = F.relu(bn(conv(out_B)))
         # apply max-pooling along points
         global_feats = torch.max(out_B, dim=2)[0]
+        # update panelty
+        self.panelty_ += panelty_A + panelty_B
         # return global and local features
         return global_feats, out_A
 
+    def panelty(self):
+        # return and reset panelty
+        cur_panelty = self.panelty_
+        self.panelty_ = 0
+        return cur_panelty
 
 class Pointnet_Classification(nn.Module):
 

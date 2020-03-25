@@ -73,7 +73,7 @@ class Model_SEG(nn.Module):
 
     def loss(self, y, y_hat, **kwargs):
         # compute loss
-        return F.nll_loss(y.reshape(-1, self.K), y_hat.flatten(), **kwargs)
+        return F.nll_loss(y.reshape(-1, self.K), y_hat.flatten(), **kwargs) + 0.01 * self.encoder.panelty()
 
     def save(self, file_path, prefix=""):
         # save encoder and segmentater separatly
