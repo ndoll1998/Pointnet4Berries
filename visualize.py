@@ -22,7 +22,7 @@ class SegmentationVisualizer(Visualizer):
 
     def __init__(self, config, model_path):
         # initialize visualizer
-        Visualizer.__init__(self)
+        Visualizer.__init__(self, background_color=(1, 1, 1))
         # save configurations
         self.class_bins = OrderedDict(config['data']['classes'])
         self.classes = list(self.class_bins.keys())
@@ -56,10 +56,10 @@ class SegmentationVisualizer(Visualizer):
         actual_colors = np.apply_along_axis(get_color, axis=-1, arr=y.reshape(-1, 1))
         pred_colors = np.apply_along_axis(get_color, axis=-1, arr=prediction)
         # get points
-        points = x[0, :3, :].T.cpu().numpy()
+        points = x[0, :3, :].t().cpu().numpy()
 
         # add pointclouds to visualizer
-        self.add_by_features(pc[:, :3], pc[:, 3:6], normalize=True)
+        self.add_by_features(pc[:, :3], pc[:, 3:6] / 255, normalize=True)
         self.add_by_features(points, actual_colors / 255, normalize=False)
         self.add_by_features(points, pred_colors / 255, normalize=False)
 
@@ -71,7 +71,7 @@ class HierarchicalSegmentationVisualizer(Visualizer):
 
     def __init__(self, config, model_path):
         # initialize visualizer
-        Visualizer.__init__(self)
+        Visualizer.__init__(self, background_color=(1, 1, 1))
 
         # data preparation
         self.align_pointclouds = config['preparation']['align_pointclouds']
@@ -184,23 +184,26 @@ taskVisualizers = {
 
 if __name__ == '__main__':
 
-    # path to example
-    example_fpath = "data/D_3D.feats"
-    # path to save folder
-    # result_fpath = "results/full/"
-    result_fpath = "results/hierarchical/v1"
+    # import ArgumentParser
+    from argparse import ArgumentParser
+
+    # create argument parser
+    parser = ArgumentParser()
+    parser.add_argument("--model", required=True, type=str)
+    parser.add_argument("--f", required=True, type=str)
+    args = parser.parse_args()
 
     # check if path is valid
-    assert os.path.exists(result_fpath), "Path does not exist"
+    assert os.path.exists(args.model), "Path does not exist"
     # open and load json file
-    with open(os.path.join(result_fpath, "config.json"), "r") as f:
+    with open(os.path.join(args.model, "config.json"), "r") as f:
         config = json.loads(f.read())
     # get task
     task = config['task']
 
     # get visualizer for given task
-    vis = taskVisualizers[task](config, result_fpath)
+    vis = taskVisualizers[task](config, args.model)
     # add test pointcloud
-    vis.add_by_file(example_fpath)
+    vis.add_by_file(args.f)
     # show
     vis.run()

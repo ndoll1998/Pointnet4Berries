@@ -248,94 +248,120 @@ def build_data_seg(pointclouds, n_points, n_samples, class_bins=None, features=s
     return x, y
 
 
-# *** BUILD TRAINING FILES ***
-
-def get_color_from_nearest(query_points, points, colors):
-    # build tree
-    tree = NearestNeighbors(n_neighbors=1, algorithm='ball_tree').fit(points)
-    # get nearest neighbor indices
-    idx = tree.kneighbors(query_points, return_distance=False)
-    # return colors from indices
-    return colors[idx.flatten()]
-
-def create_segmentation_pointcloud(original_file, segmentation_file, save_file, use_nearest_color=False):
-    # read files
-    original = np.loadtxt(original_file).astype(np.float32)
-    segmentation = np.loadtxt(segmentation_file).astype(np.float32)
-    # create feature-stack
-    stack = (original,)
-
-    # map colors to classes by index
-    color2class = list(class2color.values())
-    # get segmentations
-    if use_nearest_color:
-        # sort out points with colors not matching to any class
-        idx = [i for i, x in enumerate(segmentation) if tuple(x[3:6]) in color2class]
-        seg_sematic = get_color_from_nearest(original[:, :3], segmentation[idx, :3], segmentation[idx, 3:6])
-    else:
-        # get color by row
-        seg_sematic = segmentation[:, 3:]
-
-    # estimate curvature and normals
-    curvature, normals = estimate_curvature_and_normals(original[:, :3])
-    stack += (normals, curvature.reshape(-1, 1), )
-
-    # map segmentation to class
-    get_class = lambda c: color2class.index(tuple(c))
-    classes_ = np.apply_along_axis(get_class, 1, seg_sematic)
-    stack += (classes_.reshape(-1, 1), )
-
-    # stack segmentation to array and sace
-    combined = np.hstack(stack)
-    np.savetxt(save_file, combined)
-
-
 # *** SCRIPT ***
 
 if __name__ == '__main__':
 
     # import os to work with directories
     import os
+    # import shutil to manipulate files
+    import shutil
     # import tqdm
     from tqdm import tqdm
+    # import argparse
+    from argparse import ArgumentParser
+
+    # create argument parser
+    parser = ArgumentParser()
+    parser.add_argument("--f", type=str, required=True)
+    args = parser.parse_args()
 
     # *** Helpers ***
 
-    def create_segmentation_data_from_path(path, use_nearest_color):
-        # create skeleton-data
-        for sub_dir in os.listdir(path):
+    def get_color_from_nearest(query_points, points, colors):
+        # build tree
+        tree = NearestNeighbors(n_neighbors=1, algorithm='ball_tree').fit(points)
+        # get nearest neighbor indices
+        idx = tree.kneighbors(query_points, return_distance=False)
+        # return colors from indices
+        return colors[idx.flatten()]
 
-            # log
-            print(sub_dir)
+    def create_segmentation_pointcloud(original_file, segmentation_file, save_file, use_nearest_color=False):
+        # read files
+        original = np.loadtxt(original_file).astype(np.float32)
+        segmentation = np.loadtxt(segmentation_file).astype(np.float32)
+        # create feature-stack
+        stack = (original,)
 
-            full_path = os.path.join(path, sub_dir)
-            # get all original pointcloud-files
-            files = [fname for fname in os.listdir(full_path) if 'OR' in fname]
+        # map colors to classes by index
+        color2class = list(class2color.values())
+        # get segmentations
+        if use_nearest_color:
+            # sort out points with colors not matching to any class
+            idx = [i for i, x in enumerate(segmentation) if tuple(x[3:6]) in color2class]
+            seg_sematic = get_color_from_nearest(original[:, :3], segmentation[idx, :3], segmentation[idx, 3:6])
+        else:
+            # get color by row
+            seg_sematic = segmentation[:, 3:]
 
-            # process files
-            for orig in tqdm(files):
-                # create full path to original file
-                orig_file = os.path.join(full_path, orig)
-                # create path to ground truth
-                gt_file = os.path.join(full_path, orig.replace('OR', 'GT'))
-                # get index name of current pointcloud
-                index = orig.split('_')[1].split('.')[0]
-                # build path to save-file
-                save_file = os.path.join(path, "Processed", sub_dir + f"_{index}.feats")
-                
-                # skip if there is no ground thruth for current pointcloud
-                if not os.path.exists(gt_file):
-                    continue
-                
-                # create pointcloud
-                create_segmentation_pointcloud(orig_file, gt_file, save_file, use_nearest_color=use_nearest_color)
+        # estimate curvature and normals
+        curvature, normals = estimate_curvature_and_normals(original[:, :3])
+        stack += (normals, curvature.reshape(-1, 1), )
 
-    # base directories
-    dir_bunchs = "I:/Pointclouds/Bunch"
-    dir_skeletons = "I:/Pointclouds/Skeleton"
+        # map segmentation to class
+        get_class = lambda c: color2class.index(tuple(c))
+        classes_ = np.apply_along_axis(get_class, 1, seg_sematic)
+        stack += (classes_.reshape(-1, 1), )
 
-    print("CREATE DATA:\n")
-    # create segmentation data
-    # create_segmentation_data_from_path(dir_bunchs, use_nearest_color=False)
-    create_segmentation_data_from_path(dir_skeletons, use_nearest_color=True)
+        # stack segmentation to array and sace
+        combined = np.hstack(stack)
+        np.savetxt(save_file, combined)
+
+    tpyes2short = {'CalardisBlanc': 'CB', 'Dornfelder': 'D', 'PinotNoir': 'PN', 'Riesling': 'R'}
+
+    # *** Classification Data ***
+
+    print("Creating Classification Data...")
+    # generate source-destination-pairs
+    source_dest_pairs = []
+    for t, short_t in tpyes2short.items():
+        folder_path = os.path.join(args.f, 'BBCH87_89', t)
+        for fname in os.listdir(folder_path):
+            # create target file name
+            dest_fname = short_t + '_' + fname.split('_')[-1].zfill(9)
+            # create source and target file path
+            source_path = os.path.join(folder_path, fname)
+            dest_path = os.path.join('data/Classification/', dest_fname)
+            # add to list
+            source_dest_pairs.append((source_path, dest_path))
+    # create folder for classification data
+    os.makedirs("data/Classification", exist_ok=True)
+    # copy all files from source to dest in pairs
+    for source, dest in tqdm(source_dest_pairs):
+        shutil.copy(source, dest)
+    
+
+    # *** Segmentation Data ***
+
+    print("Creating Segmentation Data...")
+    # generate source-groundtruth-destination-triples
+    source_gt_dest_triples = []
+    path = os.path.join(args.f, 'Labeling_GT', 'BBCH87_89')
+    for fname in os.listdir(path):
+        # only consider skeleton point clouds
+        if 'grape' in fname.lower():
+            continue
+        if 'riesling' in fname.lower():
+            continue
+        # separate file name
+        t = fname.split('.')[0].split('_')[0]
+        i = fname.split('.')[0].split('_')[1]
+        # get short type descibtor
+        short_t = tpyes2short[t]
+        # for some reason this is the case for dornfelder ground truths
+        if short_t == 'D':
+            i = i.replace('E', 'D')
+        # get source and gt file
+        gt_file = os.path.join(path, fname)
+        source_file = os.path.join(args.f, 'Skeletons', t, i + '.xyzrgb')
+        # create destination file path
+        dest_file = os.path.join('data/Segmentation/', short_t + '_' + i + '.feats')
+        # add to list
+        source_gt_dest_triples.append((source_file, gt_file, dest_file))
+    # create folder for classification data
+    os.makedirs("data/Segmentation", exist_ok=True)
+    # create files
+    for source, gt, dest in tqdm(source_gt_dest_triples):
+        create_segmentation_pointcloud(source, gt, dest, use_nearest_color=True)
+
 
