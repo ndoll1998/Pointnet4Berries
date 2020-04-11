@@ -13,7 +13,7 @@ conda env create -n Pointnet -f requirements.yml
 
 After downloading the original pointcloud data you can preprocess and create the folderstructure expected by the training skipts by running the following command. This can take up to ~2.5 hours.
 
-```python
+```bash
 python utils/data.py --f PATH/TO/FOLDER
 ```
 
