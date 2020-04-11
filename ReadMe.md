@@ -43,6 +43,7 @@ For training a model we provide both python skipts as well as jupiter notebooks 
 
 ```bash
 python train_cls.py                 // classification
+python train_cls_compactness.py     // classification
 python train_seg.py                 // segmentation
 python train_seg_hierarchical.py    // hierarchical segmentation
 ```
